@@ -9,7 +9,8 @@ import type {
   SimulationConfig,
 } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// Production backend URL - hardcoded since Northflank build args not working
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://p01--backend--h769bkzvfdpf.code.run';
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
