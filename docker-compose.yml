@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: polymarket-db
+    environment:
+      POSTGRES_USER: polymarket
+      POSTGRES_PASSWORD: polymarket_dev_password
+      POSTGRES_DB: polymarket
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polymarket"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: polymarket-backend
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgres://polymarket:polymarket_dev_password@postgres:5432/polymarket
+      POLYMARKET_DATA_API: https://data-api.polymarket.com
+      POLYMARKET_CLOB_API: https://clob.polymarket.com
+      POLYMARKET_GAMMA_API: https://gamma-api.polymarket.com
+      POLYMARKET_WS_TRADES: wss://ws-live-data.polymarket.com
+      POLYMARKET_WS_ORDERBOOK: wss://ws-subscriptions-clob.polymarket.com/ws/
+      TRADE_BACKFILL_DAYS: 7
+      GBP_USD_RATE: 1.27
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Frontend Web App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    container_name: polymarket-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
