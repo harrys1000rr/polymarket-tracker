@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const ConfigSchema = z.object({
-  // Database
-  DATABASE_URL: z.string().url().default('postgres://localhost:5432/polymarket'),
+  // Database - use string() instead of url() to allow postgres:// scheme
+  DATABASE_URL: z.string().min(1).default('postgres://localhost:5432/polymarket'),
 
   // Polymarket APIs (all public, read-only)
   POLYMARKET_DATA_API: z.string().url().default('https://data-api.polymarket.com'),

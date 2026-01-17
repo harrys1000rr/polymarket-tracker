@@ -28,6 +28,7 @@ RUN adduser --system --uid 1001 backend
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/src/migrations ./dist/migrations
 
 # Set ownership
 RUN chown -R backend:nodejs /app

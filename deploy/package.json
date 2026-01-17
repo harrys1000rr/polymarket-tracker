@@ -1,0 +1,14 @@
+{
+  "name": "polymarket-tracker-deploy",
+  "version": "1.0.0",
+  "description": "Automated deployment script for Polymarket Tracker",
+  "type": "module",
+  "scripts": {
+    "deploy": "node deploy-api.mjs",
+    "deploy:browser": "node deploy-to-northflank.js"
+  },
+  "dependencies": {
+    "@northflank/js-client": "^0.8.9",
+    "playwright": "^1.40.0"
+  }
+}
