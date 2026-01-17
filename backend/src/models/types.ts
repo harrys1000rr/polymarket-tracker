@@ -10,9 +10,9 @@ export const PolymarketTradeSchema = z.object({
   asset: z.string(), // token_id
   side: z.enum(['BUY', 'SELL']),
   outcome: z.string(),
-  size: z.string(),
-  price: z.string(),
-  usdcSize: z.string().optional(),
+  size: z.union([z.string(), z.number()]).transform(v => String(v)),
+  price: z.union([z.string(), z.number()]).transform(v => String(v)),
+  usdcSize: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
   timestamp: z.number(),
   transactionHash: z.string().optional(),
   title: z.string().optional(),
