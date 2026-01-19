@@ -109,16 +109,20 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
   try {
     const params = LeaderboardQuerySchema.parse(req.query);
     const includeTrades = req.query.includeTrades === 'true';
+    const includeProfiles = req.query.includeProfiles === 'true';
 
     const leaderboard = await dataStore.getLeaderboard(
       params.metric as any,
       params.limit
     );
 
-    // Fetch user profiles for all wallets
-    const profilesMap = await getProfilesForWallets(
-      leaderboard.map(e => e.walletAddress)
-    );
+    // Optionally fetch user profiles (disabled by default for performance)
+    let profilesMap = new Map<string, { displayName?: string; profileImageUrl?: string }>();
+    if (includeProfiles && leaderboard.length > 0) {
+      profilesMap = await getProfilesForWallets(
+        leaderboard.map(e => e.walletAddress)
+      );
+    }
 
     // Optionally fetch recent trades for each wallet (for detailed view)
     let recentTradesMap = new Map<string, any[]>();
@@ -137,7 +141,7 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
         const profile = profilesMap.get(entry.walletAddress.toLowerCase());
         return {
           ...entry,
-          // Add profile info
+          // Add profile info (only if requested)
           displayName: profile?.displayName,
           profileImageUrl: profile?.profileImageUrl,
           // Convert to GBP for display
