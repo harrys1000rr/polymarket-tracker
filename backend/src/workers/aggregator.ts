@@ -59,17 +59,8 @@ export async function runFullAggregation(): Promise<void> {
   logger.info('Starting full aggregation');
 
   try {
-    // Get all active wallets
-    const activeWallets = await dataStore.getActiveWallets(168); // 7 days
-
-    logger.info({ walletCount: activeWallets.length }, 'Aggregating wallet stats');
-
-    // Process in batches
-    const batchSize = 50;
-    for (let i = 0; i < activeWallets.length; i += batchSize) {
-      const batch = activeWallets.slice(i, i + batchSize);
-      await Promise.all(batch.map(aggregateWalletStats));
-    }
+    // Use bulk SQL aggregation for speed
+    await runBulkAggregation();
 
     // Refresh materialized view
     try {
@@ -89,6 +80,52 @@ export async function runFullAggregation(): Promise<void> {
   } catch (err) {
     logger.error({ err }, 'Full aggregation failed');
   }
+}
+
+// Bulk SQL aggregation - much faster than processing wallets one by one
+async function runBulkAggregation(): Promise<void> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const cutoff1h = nowSec - 1 * 60 * 60;
+  const cutoff24h = nowSec - 24 * 60 * 60;
+  const cutoff7d = nowSec - 7 * 24 * 60 * 60;
+
+  // Single SQL query to aggregate all wallet stats at once
+  const aggregationQuery = `
+    INSERT INTO wallet_stats_live (
+      wallet_address, volume_1h, trades_1h, volume_24h, trades_24h,
+      volume_7d, trades_7d, unique_markets_7d, unrealized_pnl,
+      last_trade_seen, last_updated
+    )
+    SELECT
+      wallet_address,
+      COALESCE(SUM(CASE WHEN timestamp >= $1 THEN COALESCE(usdc_size, size * price) ELSE 0 END), 0) as volume_1h,
+      COALESCE(SUM(CASE WHEN timestamp >= $1 THEN 1 ELSE 0 END), 0) as trades_1h,
+      COALESCE(SUM(CASE WHEN timestamp >= $2 THEN COALESCE(usdc_size, size * price) ELSE 0 END), 0) as volume_24h,
+      COALESCE(SUM(CASE WHEN timestamp >= $2 THEN 1 ELSE 0 END), 0) as trades_24h,
+      COALESCE(SUM(COALESCE(usdc_size, size * price)), 0) as volume_7d,
+      COUNT(*) as trades_7d,
+      COUNT(DISTINCT condition_id) as unique_markets_7d,
+      0 as unrealized_pnl,
+      to_timestamp(MAX(timestamp)) as last_trade_seen,
+      NOW() as last_updated
+    FROM trades_raw
+    WHERE timestamp >= $3
+    GROUP BY wallet_address
+    HAVING COUNT(*) >= 5 AND SUM(COALESCE(usdc_size, size * price)) >= 100
+    ON CONFLICT (wallet_address) DO UPDATE SET
+      volume_1h = EXCLUDED.volume_1h,
+      trades_1h = EXCLUDED.trades_1h,
+      volume_24h = EXCLUDED.volume_24h,
+      trades_24h = EXCLUDED.trades_24h,
+      volume_7d = EXCLUDED.volume_7d,
+      trades_7d = EXCLUDED.trades_7d,
+      unique_markets_7d = EXCLUDED.unique_markets_7d,
+      last_trade_seen = EXCLUDED.last_trade_seen,
+      last_updated = NOW()
+  `;
+
+  const result = await query(aggregationQuery, [cutoff1h, cutoff24h, cutoff7d]);
+  logger.info({ rowsAffected: result.rowCount }, 'Bulk aggregation completed');
 }
 
 async function aggregateWalletStats(walletAddress: string): Promise<void> {
