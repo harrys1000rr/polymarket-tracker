@@ -90,22 +90,38 @@ async function runBulkAggregation(): Promise<void> {
   const cutoff7d = nowSec - 7 * 24 * 60 * 60;
 
   // Single SQL query to aggregate all wallet stats at once
+  // PnL is estimated as: (sells - buys) * avg_price for a rough approximation
   const aggregationQuery = `
     INSERT INTO wallet_stats_live (
       wallet_address, volume_1h, trades_1h, volume_24h, trades_24h,
-      volume_7d, trades_7d, unique_markets_7d, unrealized_pnl,
+      volume_7d, trades_7d, unique_markets_7d, unrealized_pnl, pnl_7d,
       last_trade_seen, last_updated
     )
     SELECT
       wallet_address,
       COALESCE(SUM(CASE WHEN timestamp >= $1 THEN COALESCE(usdc_size, size * price) ELSE 0 END), 0) as volume_1h,
-      COALESCE(SUM(CASE WHEN timestamp >= $1 THEN 1 ELSE 0 END), 0) as trades_1h,
+      COALESCE(SUM(CASE WHEN timestamp >= $1 THEN 1 ELSE 0 END), 0)::int as trades_1h,
       COALESCE(SUM(CASE WHEN timestamp >= $2 THEN COALESCE(usdc_size, size * price) ELSE 0 END), 0) as volume_24h,
-      COALESCE(SUM(CASE WHEN timestamp >= $2 THEN 1 ELSE 0 END), 0) as trades_24h,
+      COALESCE(SUM(CASE WHEN timestamp >= $2 THEN 1 ELSE 0 END), 0)::int as trades_24h,
       COALESCE(SUM(COALESCE(usdc_size, size * price)), 0) as volume_7d,
-      COUNT(*) as trades_7d,
-      COUNT(DISTINCT condition_id) as unique_markets_7d,
-      0 as unrealized_pnl,
+      COUNT(*)::int as trades_7d,
+      COUNT(DISTINCT condition_id)::int as unique_markets_7d,
+      -- Estimate unrealized PnL as net position value (sells generate profit, buys are costs)
+      COALESCE(SUM(
+        CASE
+          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price)
+          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price)
+          ELSE 0
+        END
+      ), 0) as unrealized_pnl,
+      -- PnL 7d same calculation
+      COALESCE(SUM(
+        CASE
+          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price)
+          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price)
+          ELSE 0
+        END
+      ), 0) as pnl_7d,
       to_timestamp(MAX(timestamp)) as last_trade_seen,
       NOW() as last_updated
     FROM trades_raw
@@ -120,6 +136,8 @@ async function runBulkAggregation(): Promise<void> {
       volume_7d = EXCLUDED.volume_7d,
       trades_7d = EXCLUDED.trades_7d,
       unique_markets_7d = EXCLUDED.unique_markets_7d,
+      unrealized_pnl = EXCLUDED.unrealized_pnl,
+      pnl_7d = EXCLUDED.pnl_7d,
       last_trade_seen = EXCLUDED.last_trade_seen,
       last_updated = NOW()
   `;
