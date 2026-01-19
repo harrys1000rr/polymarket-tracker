@@ -35,8 +35,8 @@ router.get('/health', async (req: Request, res: Response) => {
     res.json({
       status,
       timestamp: new Date().toISOString(),
-      lastTradeIngested: lastTrade ? new Date(lastTrade.timestamp).toISOString() : null,
-      lastAggregation: new Date(getLastAggregationTime()).toISOString(),
+      lastTradeIngested: lastTrade ? new Date(lastTrade.timestamp * 1000).toISOString() : null,
+      lastAggregation: new Date(getLastAggregationTime() || Date.now()).toISOString(),
       dbConnected,
       wsConnected: wsStatus.tradeStream,
       wsOrderbookConnected: wsStatus.orderbookStream,
@@ -101,7 +101,7 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
           timestamp: t.timestamp,
         })) : undefined,
       })),
-      lastUpdated: new Date(getLastAggregationTime()).toISOString(),
+      lastUpdated: new Date(getLastAggregationTime() || Date.now()).toISOString(),
     });
   } catch (err) {
     logger.error({ err }, 'Leaderboard fetch failed');
@@ -379,7 +379,7 @@ router.get('/stats', async (req: Request, res: Response) => {
       tradesLast1h,
       tradesLast24h,
       activeWallets,
-      lastAggregation: new Date(getLastAggregationTime()).toISOString(),
+      lastAggregation: new Date(getLastAggregationTime() || Date.now()).toISOString(),
       gbpUsdRate: config.GBP_USD_RATE,
     });
   } catch (err) {
