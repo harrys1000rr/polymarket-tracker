@@ -8,54 +8,8 @@ import { wsStream } from '../services/websocket-stream.js';
 import { runSimulation, getQuickEstimate } from '../services/simulator.js';
 import { getLastAggregationTime } from '../workers/aggregator.js';
 import { SimulationConfigSchema } from '../models/types.js';
-import { polymarketApi } from '../services/polymarket-api.js';
 
 const logger = createChildLogger('api');
-
-// Profile cache to avoid repeated API calls
-const profileCache = new Map<string, { displayName?: string; profileImageUrl?: string; cachedAt: number }>();
-const PROFILE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-async function getProfilesForWallets(walletAddresses: string[]): Promise<Map<string, { displayName?: string; profileImageUrl?: string }>> {
-  const result = new Map<string, { displayName?: string; profileImageUrl?: string }>();
-  const uncachedAddresses: string[] = [];
-
-  // Check cache first
-  for (const address of walletAddresses) {
-    const cached = profileCache.get(address.toLowerCase());
-    if (cached && Date.now() - cached.cachedAt < PROFILE_CACHE_TTL_MS) {
-      result.set(address.toLowerCase(), { displayName: cached.displayName, profileImageUrl: cached.profileImageUrl });
-    } else {
-      uncachedAddresses.push(address);
-    }
-  }
-
-  // Fetch uncached profiles
-  if (uncachedAddresses.length > 0) {
-    try {
-      const profiles = await polymarketApi.getBatchUserProfiles(uncachedAddresses);
-      for (const [address, profile] of profiles) {
-        const cacheEntry = {
-          displayName: profile.username,
-          profileImageUrl: profile.profileImage,
-          cachedAt: Date.now(),
-        };
-        profileCache.set(address.toLowerCase(), cacheEntry);
-        result.set(address.toLowerCase(), { displayName: profile.username, profileImageUrl: profile.profileImage });
-      }
-      // Cache misses (no profile found) too
-      for (const address of uncachedAddresses) {
-        if (!profiles.has(address.toLowerCase())) {
-          profileCache.set(address.toLowerCase(), { cachedAt: Date.now() });
-        }
-      }
-    } catch (err) {
-      logger.warn({ err }, 'Failed to fetch user profiles');
-    }
-  }
-
-  return result;
-}
 const router = Router();
 
 // ============================================
@@ -109,20 +63,11 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
   try {
     const params = LeaderboardQuerySchema.parse(req.query);
     const includeTrades = req.query.includeTrades === 'true';
-    const includeProfiles = req.query.includeProfiles === 'true';
 
     const leaderboard = await dataStore.getLeaderboard(
       params.metric as any,
       params.limit
     );
-
-    // Optionally fetch user profiles (disabled by default for performance)
-    let profilesMap = new Map<string, { displayName?: string; profileImageUrl?: string }>();
-    if (includeProfiles && leaderboard.length > 0) {
-      profilesMap = await getProfilesForWallets(
-        leaderboard.map(e => e.walletAddress)
-      );
-    }
 
     // Optionally fetch recent trades for each wallet (for detailed view)
     let recentTradesMap = new Map<string, any[]>();
@@ -138,12 +83,8 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
       window: params.window,
       metric: params.metric,
       leaderboard: leaderboard.map((entry) => {
-        const profile = profilesMap.get(entry.walletAddress.toLowerCase());
         return {
           ...entry,
-          // Add profile info (only if requested)
-          displayName: profile?.displayName,
-          profileImageUrl: profile?.profileImageUrl,
           // Convert to GBP for display
           realizedPnlGbp: entry.realizedPnl / config.GBP_USD_RATE,
           unrealizedPnlGbp: entry.unrealizedPnl / config.GBP_USD_RATE,
