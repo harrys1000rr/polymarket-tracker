@@ -58,10 +58,12 @@ export async function insertTrades(trades: Trade[]): Promise<number> {
   return inserted;
 }
 
-export async function getTradesSince(timestamp: number): Promise<Trade[]> {
+export async function getTradesSince(timestampMs: number): Promise<Trade[]> {
+  // Timestamps in DB are in seconds (Unix epoch), convert milliseconds to seconds
+  const timestampSec = Math.floor(timestampMs / 1000);
   const result = await query<any>(
     `SELECT * FROM trades_raw WHERE timestamp >= $1 ORDER BY timestamp ASC`,
-    [timestamp]
+    [timestampSec]
   );
 
   return result.rows.map(rowToTrade);
