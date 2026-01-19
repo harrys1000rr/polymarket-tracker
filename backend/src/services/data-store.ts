@@ -328,6 +328,7 @@ export async function getWalletStats(walletAddress: string): Promise<WalletStats
 }
 
 export async function getActiveWallets(hours: number = 24): Promise<string[]> {
+  // First try wallet_stats_live
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
   const result = await query<any>(
     `SELECT wallet_address FROM wallet_stats_live
@@ -337,7 +338,21 @@ export async function getActiveWallets(hours: number = 24): Promise<string[]> {
     [cutoff]
   );
 
-  return result.rows.map((row: any) => row.wallet_address);
+  if (result.rows.length > 0) {
+    return result.rows.map((row: any) => row.wallet_address);
+  }
+
+  // Fallback: Get active wallets directly from trades_raw (for initial bootstrap)
+  const cutoffSec = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
+  const tradesResult = await query<any>(
+    `SELECT DISTINCT wallet_address FROM trades_raw
+     WHERE timestamp >= $1
+     ORDER BY wallet_address
+     LIMIT 1000`,
+    [cutoffSec]
+  );
+
+  return tradesResult.rows.map((row: any) => row.wallet_address);
 }
 
 // ============================================
