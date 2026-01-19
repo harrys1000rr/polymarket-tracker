@@ -147,11 +147,14 @@ function runSingleSimulation(
     // Calculate position size
     let positionSizeUsd: number;
     if (ctx.cfg.sizingRule === 'equal') {
-      positionSizeUsd = ctx.allocationPerTrader / ctx.tradesPerTrader;
-      positionSizeUsd = Math.min(positionSizeUsd, 50);
+      // Equal sizing: use a reasonable fixed size based on bankroll
+      // Aim for ~20-50 positions total at any time
+      positionSizeUsd = Math.max(5, Math.min(50, ctx.initialCash / 20));
     } else {
+      // Proportional sizing: scale to trader's trade size relative to their total volume
       const traderVolume = ctx.traderVolumes.get(trade.walletAddress) || tradeUsd;
       positionSizeUsd = (tradeUsd / traderVolume) * ctx.allocationPerTrader;
+      positionSizeUsd = Math.max(5, Math.min(100, positionSizeUsd));
     }
 
     // Check market exposure limit
