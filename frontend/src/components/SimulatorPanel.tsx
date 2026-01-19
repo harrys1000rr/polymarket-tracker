@@ -415,16 +415,18 @@ export default function SimulatorPanel({ compact = false }: Props) {
                               → {entry.calculation}
                             </div>
                           )}
-                          <div className="mt-1 pl-4 text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
-                            {Object.entries(entry.details).slice(0, 6).map(([key, value]) => (
-                              <span key={key}>
-                                <span className="text-gray-600">{key}:</span>{' '}
-                                <span className="text-gray-400">
-                                  {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(value)}
+                          {entry.details && (
+                            <div className="mt-1 pl-4 text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+                              {Object.entries(entry.details).slice(0, 6).map(([key, value]) => (
+                                <span key={key}>
+                                  <span className="text-gray-600">{key}:</span>{' '}
+                                  <span className="text-gray-400">
+                                    {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(value ?? '')}
+                                  </span>
                                 </span>
-                              </span>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -454,24 +456,24 @@ export default function SimulatorPanel({ compact = false }: Props) {
                               <td className="py-1.5 pr-2">
                                 <span className={clsx(
                                   'px-1.5 py-0.5 rounded text-white font-medium',
-                                  trade.originalTrade.side === 'BUY' ? 'bg-green-500' : 'bg-red-500'
+                                  trade.originalTrade?.side === 'BUY' ? 'bg-green-500' : 'bg-red-500'
                                 )}>
-                                  {trade.originalTrade.side}
+                                  {trade.originalTrade?.side || '-'}
                                 </span>
                               </td>
                               <td className="py-1.5 pr-2 text-gray-600 dark:text-gray-400">
-                                {(trade.intendedPrice * 100).toFixed(1)}¢
+                                {((trade.intendedPrice || 0) * 100).toFixed(1)}¢
                               </td>
                               <td className="py-1.5 pr-2 text-gray-900 dark:text-white">
-                                {(trade.actualEntryPrice * 100).toFixed(1)}¢
+                                {((trade.actualEntryPrice || 0) * 100).toFixed(1)}¢
                               </td>
                               <td className="py-1.5 pr-2">
-                                <span className={trade.slippageBps > 50 ? 'text-red-500' : 'text-gray-500'}>
-                                  {trade.slippageBps}bps
+                                <span className={(trade.slippageBps || 0) > 50 ? 'text-red-500' : 'text-gray-500'}>
+                                  {Math.round(trade.slippageBps || 0)}bps
                                 </span>
                               </td>
                               <td className="py-1.5 pr-2 text-gray-600 dark:text-gray-400">
-                                ${trade.positionSizeUsd.toFixed(2)}
+                                ${(trade.positionSizeUsd || 0).toFixed(2)}
                               </td>
                             </tr>
                           ))}
