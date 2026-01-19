@@ -332,7 +332,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
                     </div>
                     <div>
                       <span className="text-gray-500">Sharpe:</span>{' '}
-                      <span>{results.results.sharpeRatio.toFixed(2)}</span>
+                      <span>{(results.results.sharpeRatio ?? 0).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
