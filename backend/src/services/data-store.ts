@@ -93,6 +93,37 @@ export async function getRecentTrades(limit: number = 100): Promise<Trade[]> {
   return result.rows.map(rowToTrade);
 }
 
+// Get recent trades for multiple wallets (for leaderboard display)
+export async function getRecentTradesForWallets(
+  walletAddresses: string[],
+  tradesPerWallet: number = 5
+): Promise<Map<string, Trade[]>> {
+  if (walletAddresses.length === 0) return new Map();
+
+  // Use a lateral join to get top N trades per wallet efficiently
+  const result = await query<any>(
+    `SELECT DISTINCT ON (wallet_address, rn) *
+     FROM (
+       SELECT *, ROW_NUMBER() OVER (PARTITION BY wallet_address ORDER BY timestamp DESC) as rn
+       FROM trades_raw
+       WHERE wallet_address = ANY($1)
+     ) sub
+     WHERE rn <= $2
+     ORDER BY wallet_address, rn`,
+    [walletAddresses, tradesPerWallet]
+  );
+
+  const tradeMap = new Map<string, Trade[]>();
+  for (const row of result.rows) {
+    const trade = rowToTrade(row);
+    const existing = tradeMap.get(trade.walletAddress) || [];
+    existing.push(trade);
+    tradeMap.set(trade.walletAddress, existing);
+  }
+
+  return tradeMap;
+}
+
 function rowToTrade(row: any): Trade {
   return {
     id: row.id,
@@ -363,65 +394,33 @@ export async function getLeaderboard(
   metric: 'realized_pnl' | 'roi' | 'volume' = 'realized_pnl',
   limit: number = 10
 ): Promise<LeaderboardEntry[]> {
-  // Try materialized view first (faster)
-  try {
-    let orderBy: string;
-    switch (metric) {
-      case 'roi':
-        orderBy = 'roi_percent DESC NULLS LAST';
-        break;
-      case 'volume':
-        orderBy = 'volume_7d DESC NULLS LAST';
-        break;
-      default:
-        orderBy = 'realized_pnl DESC NULLS LAST';
-    }
-
-    const result = await query<any>(
-      `SELECT * FROM leaderboard_current ORDER BY ${orderBy} LIMIT $1`,
-      [limit]
-    );
-
-    return result.rows.map((row: any, index: number) => ({
-      rank: index + 1,
-      walletAddress: row.wallet_address,
-      realizedPnl: parseFloat(row.realized_pnl) || 0,
-      unrealizedPnl: parseFloat(row.unrealized_pnl) || 0,
-      totalPnl: parseFloat(row.total_pnl) || 0,
-      volume: parseFloat(row.volume_7d) || 0,
-      tradeCount: row.trades_7d || 0,
-      winRate: parseFloat(row.win_rate) || 0,
-      roiPercent: parseFloat(row.roi_percent) || 0,
-      uniqueMarkets: row.unique_markets_7d || 0,
-      lastTradeSeen: row.last_trade_seen,
-    }));
-  } catch (err) {
-    // Fallback to direct query
-    logger.warn({ err }, 'Materialized view query failed, using fallback');
-    return getLeaderboardDirect(metric, limit);
-  }
+  // Use direct query for accurate pnl_7d sorting (materialized view uses realized_pnl_7d which is 0)
+  return getLeaderboardDirect(metric, limit);
 }
 
 async function getLeaderboardDirect(
   metric: string,
   limit: number
 ): Promise<LeaderboardEntry[]> {
+  // Sort by pnl_7d (unrealized_pnl) since that's what we calculate in bulk aggregation
+  // For 'realized_pnl' metric, use pnl_7d which represents net trading PnL
   let orderBy: string;
   switch (metric) {
     case 'roi':
-      orderBy = 'CASE WHEN volume_7d > 0 THEN realized_pnl_7d / volume_7d ELSE 0 END DESC';
+      orderBy = 'CASE WHEN volume_7d > 0 THEN pnl_7d / volume_7d ELSE 0 END DESC';
       break;
     case 'volume':
       orderBy = 'volume_7d DESC';
       break;
     default:
-      orderBy = 'realized_pnl_7d DESC';
+      // Sort by absolute pnl_7d to show top performers (both profit and loss leaders)
+      orderBy = 'pnl_7d DESC';
   }
 
   const result = await query<any>(
     `SELECT
       wallet_address,
-      realized_pnl_7d,
+      pnl_7d,
       unrealized_pnl,
       volume_7d,
       trades_7d,
@@ -439,9 +438,9 @@ async function getLeaderboardDirect(
   return result.rows.map((row: any, index: number) => ({
     rank: index + 1,
     walletAddress: row.wallet_address,
-    realizedPnl: parseFloat(row.realized_pnl_7d) || 0,
+    realizedPnl: parseFloat(row.pnl_7d) || 0,
     unrealizedPnl: parseFloat(row.unrealized_pnl) || 0,
-    totalPnl: (parseFloat(row.realized_pnl_7d) || 0) + (parseFloat(row.unrealized_pnl) || 0),
+    totalPnl: parseFloat(row.pnl_7d) || 0,
     volume: parseFloat(row.volume_7d) || 0,
     tradeCount: row.trades_7d || 0,
     winRate:

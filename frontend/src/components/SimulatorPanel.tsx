@@ -380,6 +380,107 @@ export default function SimulatorPanel({ compact = false }: Props) {
                   </div>
                 )}
 
+                {/* Simulation Calculation Log */}
+                {results.simulationLog && results.simulationLog.length > 0 && (
+                  <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                    <h4 className="text-sm font-medium text-green-400 mb-3 flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      Simulation Calculation Log
+                    </h4>
+                    <div className="space-y-2 max-h-96 overflow-y-auto font-mono text-xs">
+                      {results.simulationLog.map((entry, i) => (
+                        <div key={i} className="border-l-2 pl-3 py-1" style={{
+                          borderColor: entry.type === 'setup' ? '#60a5fa' :
+                                       entry.type === 'trade' ? '#f59e0b' :
+                                       entry.type === 'summary' ? '#10b981' : '#6b7280'
+                        }}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-500">[{entry.step}]</span>
+                            <span className={clsx(
+                              'px-1.5 py-0.5 rounded text-xs font-medium',
+                              entry.type === 'setup' && 'bg-blue-500/20 text-blue-400',
+                              entry.type === 'trade' && 'bg-amber-500/20 text-amber-400',
+                              entry.type === 'summary' && 'bg-green-500/20 text-green-400',
+                              entry.type === 'position' && 'bg-purple-500/20 text-purple-400',
+                              entry.type === 'settlement' && 'bg-red-500/20 text-red-400'
+                            )}>
+                              {entry.type.toUpperCase()}
+                            </span>
+                            <span className="text-gray-300">{entry.description}</span>
+                          </div>
+                          {entry.calculation && (
+                            <div className="mt-1 text-yellow-400/80 pl-4">
+                              → {entry.calculation}
+                            </div>
+                          )}
+                          <div className="mt-1 pl-4 text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+                            {Object.entries(entry.details).slice(0, 6).map(([key, value]) => (
+                              <span key={key}>
+                                <span className="text-gray-600">{key}:</span>{' '}
+                                <span className="text-gray-400">
+                                  {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(value)}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sample Trade Log */}
+                {results.sampleTradeLog && results.sampleTradeLog.length > 0 && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border dark:border-gray-700">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      Sample Trade Executions (First Simulation)
+                    </h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b dark:border-gray-600">
+                            <th className="pb-2 pr-2">Side</th>
+                            <th className="pb-2 pr-2">Target Price</th>
+                            <th className="pb-2 pr-2">Entry Price</th>
+                            <th className="pb-2 pr-2">Slippage</th>
+                            <th className="pb-2 pr-2">Size</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {results.sampleTradeLog.slice(0, 10).map((trade, i) => (
+                            <tr key={i} className="border-b dark:border-gray-700">
+                              <td className="py-1.5 pr-2">
+                                <span className={clsx(
+                                  'px-1.5 py-0.5 rounded text-white font-medium',
+                                  trade.originalTrade.side === 'BUY' ? 'bg-green-500' : 'bg-red-500'
+                                )}>
+                                  {trade.originalTrade.side}
+                                </span>
+                              </td>
+                              <td className="py-1.5 pr-2 text-gray-600 dark:text-gray-400">
+                                {(trade.intendedPrice * 100).toFixed(1)}¢
+                              </td>
+                              <td className="py-1.5 pr-2 text-gray-900 dark:text-white">
+                                {(trade.actualEntryPrice * 100).toFixed(1)}¢
+                              </td>
+                              <td className="py-1.5 pr-2">
+                                <span className={trade.slippageBps > 50 ? 'text-red-500' : 'text-gray-500'}>
+                                  {trade.slippageBps}bps
+                                </span>
+                              </td>
+                              <td className="py-1.5 pr-2 text-gray-600 dark:text-gray-400">
+                                ${trade.positionSizeUsd.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   onClick={clearResults}
                   className="text-sm text-gray-500 hover:text-gray-700"

@@ -62,11 +62,21 @@ const LeaderboardQuerySchema = z.object({
 router.get('/leaderboard', async (req: Request, res: Response) => {
   try {
     const params = LeaderboardQuerySchema.parse(req.query);
+    const includeTrades = req.query.includeTrades === 'true';
 
     const leaderboard = await dataStore.getLeaderboard(
       params.metric as any,
       params.limit
     );
+
+    // Optionally fetch recent trades for each wallet (for detailed view)
+    let recentTradesMap = new Map<string, any[]>();
+    if (includeTrades && leaderboard.length > 0) {
+      recentTradesMap = await dataStore.getRecentTradesForWallets(
+        leaderboard.map(e => e.walletAddress),
+        5 // 5 most recent trades per wallet
+      );
+    }
 
     res.json({
       timestamp: new Date().toISOString(),
@@ -79,6 +89,17 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
         unrealizedPnlGbp: entry.unrealizedPnl / config.GBP_USD_RATE,
         totalPnlGbp: entry.totalPnl / config.GBP_USD_RATE,
         volumeGbp: entry.volume / config.GBP_USD_RATE,
+        // Include recent trades if requested
+        recentTrades: includeTrades ? (recentTradesMap.get(entry.walletAddress) || []).map(t => ({
+          side: t.side,
+          outcome: t.outcome,
+          size: t.size,
+          price: t.price,
+          usdcSize: t.usdcSize,
+          usdcSizeGbp: (t.usdcSize || t.size * t.price) / config.GBP_USD_RATE,
+          market: t.marketTitle,
+          timestamp: t.timestamp,
+        })) : undefined,
       })),
       lastUpdated: new Date(getLastAggregationTime()).toISOString(),
     });

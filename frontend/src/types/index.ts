@@ -80,6 +80,30 @@ export interface SimulationConfig {
   windowDays: number;
 }
 
+export interface SimulationLogEntry {
+  step: number;
+  type: 'setup' | 'trade' | 'position' | 'settlement' | 'summary';
+  timestamp?: number;
+  description: string;
+  details: Record<string, string | number | boolean>;
+  calculation?: string;
+}
+
+export interface SimulatedTrade {
+  originalTrade: Trade;
+  simulatedEntryTime: number;
+  intendedPrice: number;
+  actualEntryPrice: number;
+  priceMovement: number;
+  slippageBps: number;
+  positionSize: number;
+  positionSizeUsd: number;
+  exitPrice: number;
+  pnl: number;
+  partialFill: boolean;
+  marketImpact: number;
+}
+
 export interface SimulationResults {
   simulationId: string;
   config: SimulationConfig;
@@ -116,6 +140,10 @@ export interface SimulationResults {
   windowStart: string;
   windowEnd: string;
   disclaimer: string;
+  // Detailed simulation log showing calculations
+  simulationLog?: SimulationLogEntry[];
+  // Sample trade breakdown from first simulation
+  sampleTradeLog?: SimulatedTrade[];
 }
 
 export interface QuickEstimate {

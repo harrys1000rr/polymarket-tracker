@@ -8,6 +8,7 @@ import {
   SimulationConfig,
   SimulationResults,
   SimulatedTrade,
+  SimulationLogEntry,
   Trade,
   OrderbookSnapshot,
   LeaderboardEntry,
@@ -286,8 +287,31 @@ async function runSingleSimulation(
 export async function runSimulation(cfg: SimulationConfig): Promise<SimulationResults> {
   const simulationId = uuidv4();
   const startTime = Date.now();
+  const simulationLog: SimulationLogEntry[] = [];
+  let stepCounter = 0;
 
   logger.info({ simulationId, cfg }, 'Starting simulation');
+
+  // Log setup phase
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'setup',
+    description: 'Initializing simulation parameters',
+    details: {
+      bankrollGbp: cfg.bankrollGbp,
+      bankrollUsd: cfg.bankrollGbp * config.GBP_USD_RATE,
+      entryDelaySec: cfg.entryDelaySec,
+      delayVarianceSec: cfg.delayVarianceSec,
+      sizingRule: cfg.sizingRule,
+      maxExposurePct: cfg.maxExposurePct,
+      minTradeUsd: cfg.minTradeUsd,
+      useActualOrderbook: cfg.useActualOrderbook,
+      marketImpactEnabled: cfg.marketImpactEnabled,
+      numSimulations: cfg.numSimulations,
+      windowDays: cfg.windowDays,
+    },
+    calculation: `Initial capital: £${cfg.bankrollGbp} × ${config.GBP_USD_RATE} (GBP/USD rate) = $${(cfg.bankrollGbp * config.GBP_USD_RATE).toFixed(2)}`,
+  });
 
   // Get top traders
   const leaderboard = await dataStore.getLeaderboard('realized_pnl', 10);
@@ -297,9 +321,37 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
     throw new Error('No traders in leaderboard');
   }
 
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'setup',
+    description: `Loaded ${topTraders.length} top traders to follow`,
+    details: {
+      traderCount: topTraders.length,
+      topTraderPnl: leaderboard[0]?.totalPnl || 0,
+      avgTraderPnl: leaderboard.reduce((sum, e) => sum + e.totalPnl, 0) / leaderboard.length,
+    },
+    calculation: `Following top ${topTraders.length} traders ranked by PnL`,
+  });
+
   // Get trades for the window
   const windowStart = Date.now() - cfg.windowDays * 24 * 60 * 60 * 1000;
   const trades = await dataStore.getTradesSince(windowStart);
+
+  // Filter trades from followed traders
+  const relevantTrades = trades.filter(t => topTraders.includes(t.walletAddress));
+
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'setup',
+    description: `Loaded historical trade data for ${cfg.windowDays}-day window`,
+    details: {
+      totalTradesInWindow: trades.length,
+      tradesFromTopTraders: relevantTrades.length,
+      windowStartDate: new Date(windowStart).toISOString(),
+      windowEndDate: new Date().toISOString(),
+    },
+    calculation: `${relevantTrades.length} trades from top traders / ${trades.length} total trades = ${((relevantTrades.length / trades.length) * 100).toFixed(1)}% coverage`,
+  });
 
   logger.info({ tradeCount: trades.length, traders: topTraders.length }, 'Loaded data for simulation');
 
@@ -307,6 +359,7 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
   const results: number[] = [];
   const allDailyPnl: Map<string, number[]> = new Map();
   const allMarketPnl: Map<string, number[]> = new Map();
+  let sampleTradeLog: SimulatedTrade[] = [];
 
   // Seeded random for reproducibility
   let seed = Date.now();
@@ -315,9 +368,26 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
     return seed / 233280;
   };
 
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'setup',
+    description: `Starting Monte Carlo simulation with ${cfg.numSimulations} iterations`,
+    details: {
+      iterations: cfg.numSimulations,
+      randomSeed: seed,
+      method: 'Linear Congruential Generator',
+    },
+    calculation: `Running ${cfg.numSimulations} simulations with random entry delays and price variations`,
+  });
+
   for (let i = 0; i < cfg.numSimulations; i++) {
     const result = await runSingleSimulation(trades, cfg, topTraders, seededRandom);
     results.push(result.finalPnl);
+
+    // Save sample trade log from first simulation
+    if (i === 0) {
+      sampleTradeLog = result.tradeLog.slice(0, 20); // Keep first 20 trades as sample
+    }
 
     // Aggregate daily PnL
     for (const [date, pnl] of result.dailyPnl) {
@@ -347,6 +417,53 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
   const returnStdDev = stdDev(results);
   const sharpeRatio = returnStdDev > 0 ? avgReturn / returnStdDev : 0;
 
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'summary',
+    description: 'Calculating distribution statistics from simulation results',
+    details: {
+      simulationsCompleted: cfg.numSimulations,
+      minPnl: Math.min(...results),
+      maxPnl: Math.max(...results),
+      avgPnl: avgReturn,
+      stdDev: returnStdDev,
+    },
+    calculation: `Mean = Σ(PnL) / N = £${avgReturn.toFixed(2)}, StdDev = √(Σ(PnL - Mean)² / N) = £${returnStdDev.toFixed(2)}`,
+  });
+
+  const p5 = percentile(results, 0.05);
+  const p25 = percentile(results, 0.25);
+  const p50 = percentile(results, 0.5);
+  const p75 = percentile(results, 0.75);
+  const p95 = percentile(results, 0.95);
+
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'summary',
+    description: 'Computing percentile distribution',
+    details: {
+      p5: p5,
+      p25: p25,
+      p50_median: p50,
+      p75: p75,
+      p95: p95,
+    },
+    calculation: `5th percentile = £${p5.toFixed(2)} (worst case), Median = £${p50.toFixed(2)} (typical), 95th percentile = £${p95.toFixed(2)} (best case)`,
+  });
+
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'summary',
+    description: 'Calculating risk-adjusted return (Sharpe Ratio)',
+    details: {
+      avgReturn: avgReturn,
+      stdDev: returnStdDev,
+      sharpeRatio: sharpeRatio,
+      riskFreeRate: 0,
+    },
+    calculation: `Sharpe Ratio = (Mean Return - Risk-Free Rate) / StdDev = (${avgReturn.toFixed(2)} - 0) / ${returnStdDev.toFixed(2)} = ${sharpeRatio.toFixed(3)}`,
+  });
+
   // Build daily breakdown
   const dailyBreakdown = Array.from(allDailyPnl.entries())
     .map(([date, pnls]) => ({
@@ -374,15 +491,50 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
     mc.market = market?.title || mc.conditionId.slice(0, 16) + '...';
   }
 
+  if (marketContributions.length > 0) {
+    simulationLog.push({
+      step: ++stepCounter,
+      type: 'summary',
+      description: 'Top contributing markets to P&L',
+      details: {
+        topMarket: marketContributions[0].market,
+        topMarketPnl: marketContributions[0].pnlContribution,
+        uniqueMarketsTraded: allMarketPnl.size,
+      },
+      calculation: `Best market contributed £${marketContributions[0].pnlContribution.toFixed(2)} on average`,
+    });
+  }
+
+  // Add sample trade breakdown to log
+  if (sampleTradeLog.length > 0) {
+    const sampleTrade = sampleTradeLog[0];
+    simulationLog.push({
+      step: ++stepCounter,
+      type: 'trade',
+      timestamp: sampleTrade.simulatedEntryTime,
+      description: 'Sample trade execution breakdown (from first simulation)',
+      details: {
+        originalTradePrice: sampleTrade.intendedPrice,
+        actualEntryPrice: sampleTrade.actualEntryPrice,
+        priceMovement: sampleTrade.priceMovement,
+        slippageBps: sampleTrade.slippageBps,
+        positionSizeUsd: sampleTrade.positionSizeUsd,
+        partialFill: sampleTrade.partialFill,
+        marketImpact: sampleTrade.marketImpact,
+      },
+      calculation: `Entry delay caused price movement of ${(sampleTrade.priceMovement * 100).toFixed(2)}%, slippage of ${sampleTrade.slippageBps}bps = ${(sampleTrade.slippageBps / 100).toFixed(2)}%`,
+    });
+  }
+
   const simulationResults: SimulationResults = {
     simulationId,
     config: cfg,
     results: {
-      pnlP5: percentile(results, 0.05),
-      pnlP25: percentile(results, 0.25),
-      pnlMedian: percentile(results, 0.5),
-      pnlP75: percentile(results, 0.75),
-      pnlP95: percentile(results, 0.95),
+      pnlP5: p5,
+      pnlP25: p25,
+      pnlMedian: p50,
+      pnlP75: p75,
+      pnlP95: p95,
       pnlMean: avgReturn,
       sharpeRatio,
     },
@@ -399,6 +551,8 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
 - Max exposure: ${cfg.maxExposurePct}% per market
 
 Past performance does not guarantee future results. This is NOT financial advice.`,
+    simulationLog,
+    sampleTradeLog,
   };
 
   logger.info(

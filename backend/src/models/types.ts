@@ -219,6 +219,15 @@ export interface SimulatedTrade {
   marketImpact: number;
 }
 
+export interface SimulationLogEntry {
+  step: number;
+  type: 'setup' | 'trade' | 'position' | 'settlement' | 'summary';
+  timestamp?: number;
+  description: string;
+  details: Record<string, string | number | boolean>;
+  calculation?: string;
+}
+
 export interface SimulationResults {
   simulationId: string;
   config: SimulationConfig;
@@ -247,6 +256,10 @@ export interface SimulationResults {
   windowStart: Date;
   windowEnd: Date;
   disclaimer: string;
+  // Detailed simulation log showing calculations
+  simulationLog: SimulationLogEntry[];
+  // Sample trade breakdown from first simulation
+  sampleTradeLog?: SimulatedTrade[];
 }
 
 // ============================================
