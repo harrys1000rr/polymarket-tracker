@@ -13,12 +13,23 @@ import type {
 const API_URL = 'https://p01--backend--h769bkzvfdpf.code.run';
 
 const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) {
-    const error = new Error('API request failed');
-    throw error;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      throw new Error(`API request failed: ${res.status}`);
+    }
+    return res.json();
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    throw err;
   }
-  return res.json();
 };
 
 // ============================================
@@ -43,8 +54,12 @@ export function useLeaderboard(
     `${API_URL}/api/leaderboard?metric=${metric}&limit=${limit}`,
     fetcher,
     {
-      refreshInterval: 5000, // Fallback polling
+      refreshInterval: 3000, // Fallback polling
       revalidateOnFocus: true,
+      errorRetryCount: 3,
+      errorRetryInterval: 2000,
+      dedupingInterval: 2000,
+      shouldRetryOnError: true,
     }
   );
 

@@ -8,7 +8,6 @@ import {
   formatPercent,
   formatWalletAddress,
   formatTimeAgo,
-  getPnlColor,
 } from '@/utils/format';
 import clsx from 'clsx';
 
@@ -19,182 +18,177 @@ interface Props {
 }
 
 export default function LeaderboardTable({ leaderboard, onSelectWallet, selectedWallet }: Props) {
-  const [sortBy, setSortBy] = useState<'rank' | 'pnl' | 'roi' | 'volume'>('rank');
+  const [sortBy, setSortBy] = useState<'rank' | 'pnl' | 'volume' | 'trades'>('rank');
 
   const sorted = [...leaderboard].sort((a, b) => {
     switch (sortBy) {
       case 'pnl':
         return (b.realizedPnlGbp || b.realizedPnl) - (a.realizedPnlGbp || a.realizedPnl);
-      case 'roi':
-        return b.roiPercent - a.roiPercent;
       case 'volume':
         return (b.volumeGbp || b.volume) - (a.volumeGbp || a.volume);
+      case 'trades':
+        return b.tradeCount - a.tradeCount;
       default:
         return a.rank - b.rank;
     }
   });
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+    <div className="rounded-xl border border-white/5 bg-[rgb(22,27,34)] overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-4 border-b border-white/5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Top 10 Traders (7 Days)
-          </h2>
+          <div className="flex items-center space-x-3">
+            <span className="text-xl">🏆</span>
+            <div>
+              <h2 className="text-lg font-bold text-white">Top Whales</h2>
+              <p className="text-xs text-gray-500">7 day performance</p>
+            </div>
+          </div>
           <div className="flex items-center space-x-2">
-            <span className="text-xs text-gray-500">Sort by:</span>
+            <span className="text-xs text-gray-500">Sort:</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="text-xs border rounded px-2 py-1 dark:bg-gray-700 dark:border-gray-600"
+              className="text-xs bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-gray-300 focus:outline-none focus:ring-1 focus:ring-purple-500"
             >
               <option value="rank">Rank</option>
               <option value="pnl">PnL</option>
-              <option value="roi">ROI</option>
               <option value="volume">Volume</option>
+              <option value="trades">Trades</option>
             </select>
           </div>
         </div>
       </div>
 
+      {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Rank
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Trader
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Realized PnL
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Unrealized
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                ROI
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Win Rate
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Volume
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Trades
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Last Trade
-              </th>
+        <table className="w-full">
+          <thead>
+            <tr className="text-xs text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left font-medium">#</th>
+              <th className="px-4 py-3 text-left font-medium">Trader</th>
+              <th className="px-4 py-3 text-right font-medium">PnL (7d)</th>
+              <th className="px-4 py-3 text-right font-medium hidden sm:table-cell">Volume</th>
+              <th className="px-4 py-3 text-right font-medium hidden md:table-cell">Trades</th>
+              <th className="px-4 py-3 text-right font-medium hidden lg:table-cell">Last Active</th>
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {sorted.map((entry) => (
-              <tr
-                key={entry.walletAddress}
-                onClick={() => onSelectWallet?.(entry.walletAddress)}
-                className={clsx(
-                  'cursor-pointer transition-colors',
-                  selectedWallet === entry.walletAddress
-                    ? 'bg-primary-50 dark:bg-primary-900/20'
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-700'
-                )}
-              >
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <span
-                    className={clsx(
-                      'inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold',
-                      entry.rank === 1 && 'bg-yellow-100 text-yellow-800',
-                      entry.rank === 2 && 'bg-gray-100 text-gray-800',
-                      entry.rank === 3 && 'bg-orange-100 text-orange-800',
-                      entry.rank > 3 && 'bg-gray-100 text-gray-600'
-                    )}
-                  >
-                    {entry.rank}
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <a
-                    href={`https://polymarket.com/profile/${entry.walletAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="group flex items-center space-x-2"
-                  >
-                    {entry.profileImageUrl && (
-                      <img
-                        src={entry.profileImageUrl}
-                        alt=""
-                        className="w-6 h-6 rounded-full"
-                      />
-                    )}
-                    <div className="flex flex-col">
-                      {entry.displayName ? (
-                        <>
-                          <span className="text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:underline">
-                            {entry.displayName}
-                          </span>
-                          <span className="font-mono text-xs text-gray-400">
-                            {formatWalletAddress(entry.walletAddress)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="font-mono text-sm text-primary-600 dark:text-primary-400 group-hover:underline">
+          <tbody className="divide-y divide-white/5">
+            {sorted.map((entry, index) => {
+              const pnl = entry.realizedPnlGbp || entry.realizedPnl || 0;
+              const isPositive = pnl >= 0;
+
+              return (
+                <tr
+                  key={entry.walletAddress}
+                  onClick={() => onSelectWallet?.(entry.walletAddress)}
+                  className={clsx(
+                    'cursor-pointer table-row-hover',
+                    selectedWallet === entry.walletAddress && 'bg-purple-500/10'
+                  )}
+                >
+                  {/* Rank */}
+                  <td className="px-4 py-3">
+                    <RankBadge rank={entry.rank} />
+                  </td>
+
+                  {/* Trader */}
+                  <td className="px-4 py-3">
+                    <a
+                      href={`https://polymarket.com/profile/${entry.walletAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="group flex items-center space-x-2"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center text-xs font-bold text-white">
+                        {entry.walletAddress.slice(2, 4).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="font-mono text-sm text-gray-300 group-hover:text-purple-400 transition-colors">
                           {formatWalletAddress(entry.walletAddress)}
                         </span>
-                      )}
-                    </div>
-                    <svg className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className={clsx('font-semibold', getPnlColor(entry.realizedPnlGbp || entry.realizedPnl))}>
-                    {formatPnl(entry.realizedPnlGbp || entry.realizedPnl, 'GBP')}
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className={clsx('text-sm', getPnlColor(entry.unrealizedPnlGbp || entry.unrealizedPnl))}>
-                    {formatPnl(entry.unrealizedPnlGbp || entry.unrealizedPnl, 'GBP')}
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className={clsx('text-sm', getPnlColor(entry.roiPercent))}>
-                    {formatPercent(entry.roiPercent)}
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {((entry.winRate || 0) * 100).toFixed(0)}%
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {formatCurrency(entry.volumeGbp || entry.volume, 'GBP')}
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{entry.tradeCount}</span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
-                  <span className="text-xs text-gray-500">
-                    {entry.lastTradeSeen ? formatTimeAgo(entry.lastTradeSeen) : '-'}
-                  </span>
-                </td>
-              </tr>
-            ))}
+                        {entry.displayName && (
+                          <p className="text-xs text-gray-500">{entry.displayName}</p>
+                        )}
+                      </div>
+                      <svg className="w-3 h-3 text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </td>
+
+                  {/* PnL */}
+                  <td className="px-4 py-3 text-right">
+                    <span className={clsx(
+                      'font-bold stat-number',
+                      isPositive ? 'text-green-400' : 'text-red-400'
+                    )}>
+                      {formatPnl(pnl, 'GBP')}
+                    </span>
+                  </td>
+
+                  {/* Volume */}
+                  <td className="px-4 py-3 text-right hidden sm:table-cell">
+                    <span className="text-sm text-gray-400 stat-number">
+                      {formatCurrency(entry.volumeGbp || entry.volume, 'GBP')}
+                    </span>
+                  </td>
+
+                  {/* Trades */}
+                  <td className="px-4 py-3 text-right hidden md:table-cell">
+                    <span className="text-sm text-gray-400">{entry.tradeCount}</span>
+                  </td>
+
+                  {/* Last Active */}
+                  <td className="px-4 py-3 text-right hidden lg:table-cell">
+                    <span className="text-xs text-gray-500">
+                      {entry.lastTradeSeen ? formatTimeAgo(entry.lastTradeSeen) : '-'}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {leaderboard.length === 0 && (
-        <div className="px-4 py-12 text-center text-gray-500">
-          <p>No traders found. Data is still loading...</p>
+        <div className="px-4 py-12 text-center">
+          <span className="text-3xl">🔍</span>
+          <p className="mt-2 text-gray-500">No whales found yet...</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank === 1) {
+    return (
+      <div className="w-8 h-8 rounded-full rank-1 flex items-center justify-center animate-float">
+        <span className="text-sm">👑</span>
+      </div>
+    );
+  }
+  if (rank === 2) {
+    return (
+      <div className="w-8 h-8 rounded-full rank-2 flex items-center justify-center">
+        <span className="text-sm font-bold text-white">2</span>
+      </div>
+    );
+  }
+  if (rank === 3) {
+    return (
+      <div className="w-8 h-8 rounded-full rank-3 flex items-center justify-center">
+        <span className="text-sm font-bold text-white">3</span>
+      </div>
+    );
+  }
+  return (
+    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+      <span className="text-sm font-medium text-gray-400">{rank}</span>
     </div>
   );
 }

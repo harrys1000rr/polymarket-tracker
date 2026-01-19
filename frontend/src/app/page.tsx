@@ -1,83 +1,69 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLeaderboard, useWallet, useHealth } from '@/hooks/useApi';
 import LeaderboardTable from '@/components/LeaderboardTable';
 import SimulatorPanel from '@/components/SimulatorPanel';
 import {
   formatCurrency,
   formatPnl,
-  formatPercent,
   formatWalletAddress,
   formatTimeAgo,
-  getPnlColor,
 } from '@/utils/format';
 import clsx from 'clsx';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 
 export default function Home() {
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
   const { leaderboard, lastUpdated, isLoading, isError, liveStatus, isConnected } = useLeaderboard('realized_pnl', 10);
   const { wallet, isLoading: walletLoading } = useWallet(selectedWallet);
   const { health } = useHealth();
+  const [retryCount, setRetryCount] = useState(0);
 
-  // Use live status if available (real-time from SSE), fallback to health endpoint
-  const displayTradesLast1h = liveStatus?.tradesLast1h ?? health?.tradesLast1h;
-  const displayActiveWallets = liveStatus?.activeWallets ?? health?.activeWallets;
+  // Auto retry on error
+  useEffect(() => {
+    if (isError && retryCount < 3) {
+      const timer = setTimeout(() => setRetryCount(r => r + 1), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isError, retryCount]);
+
+  const displayTradesLast1h = liveStatus?.tradesLast1h ?? health?.tradesLast1h ?? 0;
+  const displayActiveWallets = liveStatus?.activeWallets ?? health?.activeWallets ?? 0;
+  const topTraderPnl = leaderboard[0]?.realizedPnlGbp || leaderboard[0]?.realizedPnl || 0;
 
   return (
     <div className="space-y-6">
-      {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Active Traders (24h)</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {displayActiveWallets != null ? displayActiveWallets.toLocaleString() : '-'}
-          </p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Trades Last Hour</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {displayTradesLast1h != null ? displayTradesLast1h.toLocaleString() : '-'}
-          </p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Top Trader PnL (7d)</p>
-          <p className={clsx('text-2xl font-bold', getPnlColor(leaderboard[0]?.realizedPnlGbp || 0))}>
-            {leaderboard[0] ? formatPnl(leaderboard[0].realizedPnlGbp || 0, 'GBP') : '-'}
-          </p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Data Status</p>
-          <div className="flex items-center space-x-2">
-            <span
-              className={clsx(
-                'w-2 h-2 rounded-full',
-                isConnected && liveStatus?.wsConnected
-                  ? 'bg-green-500 animate-pulse'
-                  : health?.status === 'healthy'
-                  ? 'bg-green-500'
-                  : health?.status === 'degraded'
-                  ? 'bg-yellow-500'
-                  : 'bg-red-500'
-              )}
-            />
-            <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-              {isConnected ? 'Live' : health?.status || 'Connecting...'}
-            </span>
-          </div>
-          {lastUpdated && (
-            <p className="text-xs text-gray-500 mt-1">Updated {formatTimeAgo(lastUpdated)}</p>
-          )}
-        </div>
+      {/* Hero Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          icon="🐋"
+          label="Whales Tracked"
+          value={displayActiveWallets.toLocaleString()}
+          subtext="active traders"
+          color="purple"
+        />
+        <StatCard
+          icon="📊"
+          label="Trades/Hour"
+          value={displayTradesLast1h.toLocaleString()}
+          subtext="real-time data"
+          color="cyan"
+        />
+        <StatCard
+          icon="👑"
+          label="Top Alpha (7d)"
+          value={formatPnl(topTraderPnl, 'GBP')}
+          subtext="best performer"
+          color={topTraderPnl >= 0 ? 'green' : 'red'}
+          highlight
+        />
+        <StatCard
+          icon={isConnected ? "🟢" : "🔴"}
+          label="Feed Status"
+          value={isConnected ? "Live" : "Connecting..."}
+          subtext={lastUpdated ? `${formatTimeAgo(lastUpdated)}` : 'syncing...'}
+          color={isConnected ? 'green' : 'yellow'}
+        />
       </div>
 
       {/* Main Content */}
@@ -85,14 +71,11 @@ export default function Home() {
         {/* Leaderboard */}
         <div className="lg:col-span-2">
           {isLoading ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto" />
-              <p className="mt-4 text-gray-500">Loading leaderboard...</p>
-            </div>
+            <LoadingSkeleton />
           ) : isError ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center text-red-500">
-              Failed to load leaderboard. Please try again.
-            </div>
+            <ErrorState onRetry={() => setRetryCount(r => r + 1)} />
+          ) : leaderboard.length === 0 ? (
+            <EmptyState />
           ) : (
             <LeaderboardTable
               leaderboard={leaderboard}
@@ -104,149 +87,231 @@ export default function Home() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Simulator Quick View */}
+          {/* Quick Simulator */}
           <SimulatorPanel compact />
 
           {/* Selected Wallet Details */}
           {selectedWallet && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Wallet Details
-                </h3>
-                <button
-                  onClick={() => setSelectedWallet(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {walletLoading ? (
-                <div className="animate-pulse space-y-3">
-                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
-                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
-                </div>
-              ) : wallet ? (
-                <div className="space-y-4">
-                  <p className="font-mono text-sm text-gray-600 dark:text-gray-400">
-                    {formatWalletAddress(wallet.walletAddress)}
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-gray-500">7d PnL</p>
-                      <p className={clsx('font-semibold', getPnlColor(wallet.stats['7d'].pnlGbp || 0))}>
-                        {formatPnl(wallet.stats['7d'].pnlGbp || 0, 'GBP')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">7d Volume</p>
-                      <p className="font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(wallet.stats['7d'].volumeGbp || 0, 'GBP')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Trades</p>
-                      <p className="font-semibold text-gray-900 dark:text-white">
-                        {wallet.stats['7d'].trades}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Win Rate</p>
-                      <p className="font-semibold text-gray-900 dark:text-white">
-                        {((wallet.stats['7d'].winRate || 0) * 100).toFixed(0)}%
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* PnL Chart */}
-                  {wallet.pnlChart.length > 0 && (
-                    <div className="h-32">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={wallet.pnlChart}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
-                          <XAxis dataKey="timestamp" tick={false} />
-                          <YAxis tick={{ fontSize: 10 }} />
-                          <Tooltip
-                            formatter={(value: number) => [formatCurrency(value, 'GBP'), 'PnL']}
-                            labelFormatter={(ts) => new Date(ts).toLocaleDateString()}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="cumulativePnl"
-                            stroke="#0ea5e9"
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-
-                  {/* Recent Trades */}
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Recent Trades
-                    </p>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {wallet.recentTrades.slice(0, 10).map((trade, i) => (
-                        <div
-                          key={i}
-                          className="text-xs bg-gray-50 dark:bg-gray-700 rounded p-2"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center space-x-2">
-                              <span
-                                className={clsx(
-                                  'px-1.5 py-0.5 rounded text-white font-medium',
-                                  trade.side === 'BUY' ? 'bg-green-500' : 'bg-red-500'
-                                )}
-                              >
-                                {trade.side}
-                              </span>
-                              <span className="text-gray-600 dark:text-gray-400">
-                                {trade.outcome}
-                              </span>
-                            </div>
-                            <span className="text-gray-500 font-medium">
-                              {formatCurrency(trade.usdcSizeGbp || 0, 'GBP')}
-                            </span>
-                          </div>
-                          {trade.marketTitle && (
-                            <a
-                              href={trade.marketSlug ? `https://polymarket.com/event/${trade.marketSlug}` : '#'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 line-clamp-2"
-                              title={trade.marketTitle}
-                            >
-                              {trade.marketTitle}
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <a
-                    href={`https://polymarket.com/portfolio/${wallet.walletAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-center text-sm text-primary-600 hover:text-primary-700"
-                  >
-                    View on Polymarket
-                  </a>
-                </div>
-              ) : (
-                <p className="text-gray-500">Select a wallet to view details</p>
-              )}
-            </div>
+            <WalletDetailsPanel
+              wallet={wallet}
+              loading={walletLoading}
+              onClose={() => setSelectedWallet(null)}
+            />
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Stat Card Component
+function StatCard({
+  icon,
+  label,
+  value,
+  subtext,
+  color,
+  highlight
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  subtext: string;
+  color: 'purple' | 'cyan' | 'green' | 'red' | 'yellow';
+  highlight?: boolean;
+}) {
+  const colorClasses = {
+    purple: 'from-purple-500/20 to-purple-600/10 border-purple-500/20',
+    cyan: 'from-cyan-500/20 to-cyan-600/10 border-cyan-500/20',
+    green: 'from-green-500/20 to-green-600/10 border-green-500/20',
+    red: 'from-red-500/20 to-red-600/10 border-red-500/20',
+    yellow: 'from-yellow-500/20 to-yellow-600/10 border-yellow-500/20',
+  };
+
+  const textColors = {
+    purple: 'text-purple-400',
+    cyan: 'text-cyan-400',
+    green: 'text-green-400',
+    red: 'text-red-400',
+    yellow: 'text-yellow-400',
+  };
+
+  return (
+    <div className={clsx(
+      'relative overflow-hidden rounded-xl p-4 border bg-gradient-to-br transition-all duration-200 card-hover',
+      colorClasses[color],
+      highlight && 'ring-1 ring-green-500/30'
+    )}>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">{label}</p>
+          <p className={clsx('text-2xl font-black stat-number mt-1', textColors[color])}>
+            {value}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">{subtext}</p>
+        </div>
+        <span className="text-2xl">{icon}</span>
+      </div>
+    </div>
+  );
+}
+
+// Loading Skeleton
+function LoadingSkeleton() {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[rgb(22,27,34)] overflow-hidden">
+      <div className="p-4 border-b border-white/5">
+        <div className="skeleton h-6 w-48 rounded" />
+      </div>
+      <div className="p-4 space-y-3">
+        {[...Array(10)].map((_, i) => (
+          <div key={i} className="flex items-center space-x-4">
+            <div className="skeleton h-8 w-8 rounded-full" />
+            <div className="skeleton h-4 w-32 rounded" />
+            <div className="flex-1" />
+            <div className="skeleton h-4 w-20 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Error State
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center">
+      <span className="text-4xl">😵</span>
+      <h3 className="text-lg font-bold text-white mt-4">Connection Issue</h3>
+      <p className="text-sm text-gray-400 mt-2">
+        Having trouble connecting to the server. This might be temporary.
+      </p>
+      <button
+        onClick={onRetry}
+        className="mt-4 px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium transition-all"
+      >
+        Try Again
+      </button>
+    </div>
+  );
+}
+
+// Empty State
+function EmptyState() {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[rgb(22,27,34)] p-8 text-center">
+      <span className="text-4xl">🔍</span>
+      <h3 className="text-lg font-bold text-white mt-4">No Whales Yet</h3>
+      <p className="text-sm text-gray-400 mt-2">
+        Waiting for trading data to come in. Check back shortly!
+      </p>
+    </div>
+  );
+}
+
+// Wallet Details Panel
+function WalletDetailsPanel({
+  wallet,
+  loading,
+  onClose
+}: {
+  wallet: any;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-white/5 bg-[rgb(22,27,34)] p-4">
+        <div className="flex justify-between items-center mb-4">
+          <div className="skeleton h-5 w-32 rounded" />
+          <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
+        </div>
+        <div className="space-y-3">
+          <div className="skeleton h-4 w-full rounded" />
+          <div className="skeleton h-4 w-3/4 rounded" />
+          <div className="skeleton h-24 w-full rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!wallet) return null;
+
+  const pnl = wallet.stats?.['7d']?.pnlGbp || 0;
+  const volume = wallet.stats?.['7d']?.volumeGbp || 0;
+  const trades = wallet.stats?.['7d']?.trades || 0;
+  const winRate = (wallet.stats?.['7d']?.winRate || 0) * 100;
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-[rgb(22,27,34)] p-4 animate-slide-up">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+          <span>🔍</span>
+          <span>Whale Intel</span>
+        </h3>
+        <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">✕</button>
+      </div>
+
+      <p className="font-mono text-sm text-gray-400 mb-4">
+        {formatWalletAddress(wallet.walletAddress)}
+      </p>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="rounded-lg bg-white/5 p-3">
+          <p className="text-xs text-gray-500">7d PnL</p>
+          <p className={clsx('text-lg font-bold', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+            {formatPnl(pnl, 'GBP')}
+          </p>
+        </div>
+        <div className="rounded-lg bg-white/5 p-3">
+          <p className="text-xs text-gray-500">Volume</p>
+          <p className="text-lg font-bold text-white">{formatCurrency(volume, 'GBP')}</p>
+        </div>
+        <div className="rounded-lg bg-white/5 p-3">
+          <p className="text-xs text-gray-500">Trades</p>
+          <p className="text-lg font-bold text-white">{trades}</p>
+        </div>
+        <div className="rounded-lg bg-white/5 p-3">
+          <p className="text-xs text-gray-500">Win Rate</p>
+          <p className="text-lg font-bold text-white">{winRate.toFixed(0)}%</p>
+        </div>
+      </div>
+
+      {/* Recent Trades */}
+      {wallet.recentTrades?.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Recent Moves</p>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {wallet.recentTrades.slice(0, 5).map((trade: any, i: number) => (
+              <div key={i} className="rounded-lg bg-white/5 p-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className={trade.side === 'BUY' ? 'tag-buy tag' : 'tag-sell tag'}>
+                      {trade.side}
+                    </span>
+                    <span className="text-sm text-gray-300">{trade.outcome}</span>
+                  </div>
+                  <span className="text-sm font-medium text-white">
+                    {formatCurrency(trade.usdcSizeGbp || 0, 'GBP')}
+                  </span>
+                </div>
+                {trade.marketTitle && (
+                  <p className="text-xs text-gray-500 mt-1 line-clamp-1">{trade.marketTitle}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <a
+        href={`https://polymarket.com/profile/${wallet.walletAddress}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block w-full text-center py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-all font-medium text-sm"
+      >
+        View Full Profile →
+      </a>
     </div>
   );
 }
