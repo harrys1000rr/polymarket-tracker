@@ -13,6 +13,31 @@ import {
 const logger = createChildLogger('data-store');
 
 // ============================================
+// Leaderboard Cache (for instant response)
+// ============================================
+interface LeaderboardCache {
+  data: LeaderboardEntry[];
+  timestamp: number;
+}
+
+const leaderboardCache: Map<string, LeaderboardCache> = new Map();
+const CACHE_TTL_MS = 2000; // 2 seconds
+
+export function setLeaderboardCache(metric: string, limit: number, data: LeaderboardEntry[]): void {
+  const key = `${metric}:${limit}`;
+  leaderboardCache.set(key, { data, timestamp: Date.now() });
+}
+
+function getLeaderboardCache(metric: string, limit: number): LeaderboardEntry[] | null {
+  const key = `${metric}:${limit}`;
+  const cached = leaderboardCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+  return null;
+}
+
+// ============================================
 // Trade Storage
 // ============================================
 
@@ -396,8 +421,16 @@ export async function getLeaderboard(
   metric: 'realized_pnl' | 'roi' | 'volume' = 'realized_pnl',
   limit: number = 10
 ): Promise<LeaderboardEntry[]> {
-  // Use direct query for accurate pnl_7d sorting (materialized view uses realized_pnl_7d which is 0)
-  return getLeaderboardDirect(metric, limit);
+  // Check cache first for instant response
+  const cached = getLeaderboardCache(metric, limit);
+  if (cached) {
+    return cached;
+  }
+
+  // Cache miss - fetch from DB and cache result
+  const result = await getLeaderboardDirect(metric, limit);
+  setLeaderboardCache(metric, limit, result);
+  return result;
 }
 
 async function getLeaderboardDirect(
