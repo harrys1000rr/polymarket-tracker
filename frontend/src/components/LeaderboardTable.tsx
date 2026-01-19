@@ -137,7 +137,7 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-right">
                   <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {(entry.winRate * 100).toFixed(0)}%
+                    {((entry.winRate || 0) * 100).toFixed(0)}%
                   </span>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-right">
