@@ -32,14 +32,16 @@ function calculateRealisticFill(
   sizeUsd: number,
   orderbook: OrderbookSnapshot | null,
   marketImpactEnabled: boolean,
-  dailyVolume: number = 100000
+  dailyVolume: number = 100000,
+  basePrice: number = 0.5 // The price to start from (trade price or mid price)
 ): FillResult {
-  // Default if no orderbook data
+  // Default if no orderbook data - use the base price with slippage
   if (!orderbook) {
     // Use a conservative slippage estimate based on trade size
     const baseSlippage = Math.min(50, Math.sqrt(sizeUsd / 100) * 10);
+    const slippageMultiplier = 1 + (side === 'BUY' ? 1 : -1) * (baseSlippage / 10000);
     return {
-      avgPrice: side === 'BUY' ? 0.5 * (1 + baseSlippage / 10000) : 0.5 * (1 - baseSlippage / 10000),
+      avgPrice: Math.max(0.001, Math.min(0.999, basePrice * slippageMultiplier)),
       slippageBps: baseSlippage,
       filled: true,
       fillRatio: 1,
@@ -168,13 +170,14 @@ function runSingleSimulation(
     const market = ctx.marketCache.get(trade.conditionId);
     const dailyVolume = market?.dailyVolume || 100000;
 
-    // Calculate realistic fill (no orderbook - use conservative slippage estimate)
+    // Calculate realistic fill using trade price as base (no orderbook for speed)
     const fill = calculateRealisticFill(
       trade.side,
       positionSizeUsd,
       null, // No orderbook for speed
       ctx.cfg.marketImpactEnabled,
-      dailyVolume
+      dailyVolume,
+      priceAtEntry // Use the price at entry time (with drift) as base
     );
 
     const actualSizeUsd = positionSizeUsd * fill.fillRatio;
