@@ -146,6 +146,8 @@ export interface WalletStats {
 export interface LeaderboardEntry {
   rank: number;
   walletAddress: string;
+  displayName?: string;
+  profileImageUrl?: string;
   realizedPnl: number;
   unrealizedPnl: number;
   totalPnl: number;

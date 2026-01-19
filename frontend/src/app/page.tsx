@@ -191,28 +191,41 @@ export default function Home() {
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Recent Trades
                     </p>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
                       {wallet.recentTrades.slice(0, 10).map((trade, i) => (
                         <div
                           key={i}
-                          className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-700 rounded p-2"
+                          className="text-xs bg-gray-50 dark:bg-gray-700 rounded p-2"
                         >
-                          <div className="flex items-center space-x-2">
-                            <span
-                              className={clsx(
-                                'px-1.5 py-0.5 rounded text-white font-medium',
-                                trade.side === 'BUY' ? 'bg-green-500' : 'bg-red-500'
-                              )}
-                            >
-                              {trade.side}
-                            </span>
-                            <span className="text-gray-600 dark:text-gray-400 truncate max-w-[120px]">
-                              {trade.outcome}
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center space-x-2">
+                              <span
+                                className={clsx(
+                                  'px-1.5 py-0.5 rounded text-white font-medium',
+                                  trade.side === 'BUY' ? 'bg-green-500' : 'bg-red-500'
+                                )}
+                              >
+                                {trade.side}
+                              </span>
+                              <span className="text-gray-600 dark:text-gray-400">
+                                {trade.outcome}
+                              </span>
+                            </div>
+                            <span className="text-gray-500 font-medium">
+                              {formatCurrency(trade.usdcSizeGbp || 0, 'GBP')}
                             </span>
                           </div>
-                          <span className="text-gray-500">
-                            {formatCurrency(trade.usdcSizeGbp || 0, 'GBP')}
-                          </span>
+                          {trade.marketTitle && (
+                            <a
+                              href={trade.marketSlug ? `https://polymarket.com/event/${trade.marketSlug}` : '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 line-clamp-2"
+                              title={trade.marketTitle}
+                            >
+                              {trade.marketTitle}
+                            </a>
+                          )}
                         </div>
                       ))}
                     </div>

@@ -348,6 +348,48 @@ class PolymarketAPI {
     return allMarkets.slice(0, limit);
   }
 
+  // ============================================
+  // User Profiles
+  // ============================================
+
+  async getUserProfile(walletAddress: string): Promise<{
+    username?: string;
+    profileImage?: string;
+    bio?: string;
+  } | null> {
+    return gammaApiLimiter(async () => {
+      try {
+        const response = await this.gammaApi.get(`/profiles/${walletAddress.toLowerCase()}`);
+        const data = response.data;
+        if (!data) return null;
+
+        return {
+          username: data.username || data.name,
+          profileImage: data.profileImage || data.profile_image,
+          bio: data.bio,
+        };
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  async getBatchUserProfiles(walletAddresses: string[]): Promise<Map<string, { username?: string; profileImage?: string }>> {
+    const results = new Map<string, { username?: string; profileImage?: string }>();
+
+    // Process in parallel with rate limiting
+    await Promise.all(
+      walletAddresses.map(async (address) => {
+        const profile = await this.getUserProfile(address);
+        if (profile) {
+          results.set(address.toLowerCase(), profile);
+        }
+      })
+    );
+
+    return results;
+  }
+
   async getRecentlyClosedMarkets(days: number = 7): Promise<PolymarketMarket[]> {
     const allMarkets: PolymarketMarket[] = [];
     let offset = 0;

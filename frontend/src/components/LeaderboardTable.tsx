@@ -65,7 +65,7 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
                 Rank
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                Wallet
+                Trader
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                 Realized PnL
@@ -116,9 +116,40 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
                   </span>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <span className="font-mono text-sm text-gray-900 dark:text-white">
-                    {formatWalletAddress(entry.walletAddress)}
-                  </span>
+                  <a
+                    href={`https://polymarket.com/profile/${entry.walletAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="group flex items-center space-x-2"
+                  >
+                    {entry.profileImageUrl && (
+                      <img
+                        src={entry.profileImageUrl}
+                        alt=""
+                        className="w-6 h-6 rounded-full"
+                      />
+                    )}
+                    <div className="flex flex-col">
+                      {entry.displayName ? (
+                        <>
+                          <span className="text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:underline">
+                            {entry.displayName}
+                          </span>
+                          <span className="font-mono text-xs text-gray-400">
+                            {formatWalletAddress(entry.walletAddress)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="font-mono text-sm text-primary-600 dark:text-primary-400 group-hover:underline">
+                          {formatWalletAddress(entry.walletAddress)}
+                        </span>
+                      )}
+                    </div>
+                    <svg className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-right">
                   <span className={clsx('font-semibold', getPnlColor(entry.realizedPnlGbp || entry.realizedPnl))}>
