@@ -211,7 +211,7 @@ async function aggregateWalletStats(walletAddress: string): Promise<void> {
       unrealizedPnl,
       openPositions,
       uniqueMarkets7d: markets.size,
-      lastTradeSeen: new Date(Math.max(...trades.map((t: any) => parseInt(t.timestamp)))),
+      lastTradeSeen: new Date(Math.max(...trades.map((t: any) => parseInt(t.timestamp))) * 1000),
     });
   } catch (err) {
     logger.error({ err, wallet: walletAddress }, 'Failed to aggregate wallet');
