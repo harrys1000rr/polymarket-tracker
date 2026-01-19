@@ -88,7 +88,7 @@ function calculateRealisticFill(
 }
 
 // ============================================
-// Single Simulation Run
+// Single Simulation Run (Optimized - No DB calls in hot loop)
 // ============================================
 
 interface PortfolioState {
@@ -96,105 +96,89 @@ interface PortfolioState {
   positions: Map<string, { size: number; avgPrice: number; outcome: string; conditionId: string }>;
 }
 
-async function runSingleSimulation(
+interface MarketCache {
+  dailyVolume: number;
+  isClosed: boolean;
+  winningOutcome?: string;
+  lastPriceYes: number;
+}
+
+interface SimulationContext {
+  cfg: SimulationConfig;
+  initialCash: number;
+  allocationPerTrader: number;
+  maxExposureUsd: number;
+  traderVolumes: Map<string, number>;
+  marketCache: Map<string, MarketCache>;
+  tradesPerTrader: number;
+}
+
+// Synchronous single simulation - no DB calls
+function runSingleSimulation(
   trades: Trade[],
-  cfg: SimulationConfig,
-  topTraders: string[],
-  rng: () => number // Random number generator for reproducibility
-): Promise<{
+  ctx: SimulationContext,
+  rng: () => number
+): {
   finalPnl: number;
   dailyPnl: Map<string, number>;
   marketPnl: Map<string, number>;
   tradeLog: SimulatedTrade[];
-}> {
+} {
   const portfolio: PortfolioState = {
-    cash: cfg.bankrollGbp * config.GBP_USD_RATE, // Convert to USD
+    cash: ctx.initialCash,
     positions: new Map(),
   };
 
   const tradeLog: SimulatedTrade[] = [];
   const dailyPnl = new Map<string, number>();
   const marketPnl = new Map<string, number>();
-
-  // Calculate allocation per trader
-  const allocationPerTrader = portfolio.cash / topTraders.length;
-
-  // Track exposure per market
   const marketExposure = new Map<string, number>();
-  const maxExposureUsd = portfolio.cash * (cfg.maxExposurePct / 100);
 
-  // Sort trades by timestamp
-  const sortedTrades = [...trades].sort((a, b) => a.timestamp - b.timestamp);
-
-  for (const trade of sortedTrades) {
-    // Check if this trade is from a top trader
-    if (!topTraders.includes(trade.walletAddress)) continue;
-
-    // Check minimum trade size
+  for (const trade of trades) {
     const tradeUsd = trade.usdcSize || trade.size * trade.price;
-    if (tradeUsd < cfg.minTradeUsd) continue;
+    if (tradeUsd < ctx.cfg.minTradeUsd) continue;
 
-    // Calculate random delay within variance
-    const delay = cfg.entryDelaySec + (rng() - 0.5) * 2 * cfg.delayVarianceSec;
+    // Calculate random delay and price drift
+    const delay = ctx.cfg.entryDelaySec + (rng() - 0.5) * 2 * ctx.cfg.delayVarianceSec;
     const entryTime = trade.timestamp + delay * 1000;
-
-    // Get price at entry time (with delay)
-    let priceAtEntry = await dataStore.getPriceAtTime(trade.tokenId, entryTime);
-    if (priceAtEntry === null) {
-      // Fall back to original trade price with some drift
-      const drift = (rng() - 0.5) * 0.02; // ±1% random drift
-      priceAtEntry = trade.price * (1 + drift);
-    }
-
-    // Get orderbook snapshot for realistic slippage
-    let orderbook: OrderbookSnapshot | null = null;
-    if (cfg.useActualOrderbook) {
-      orderbook = await dataStore.getOrderbookSnapshot(trade.tokenId, entryTime);
-    }
+    const drift = (rng() - 0.5) * 0.02; // ±1% random drift
+    const priceAtEntry = trade.price * (1 + drift);
 
     // Calculate position size
     let positionSizeUsd: number;
-    if (cfg.sizingRule === 'equal') {
-      positionSizeUsd = allocationPerTrader / (sortedTrades.length / topTraders.length);
-      positionSizeUsd = Math.min(positionSizeUsd, 50); // Cap at $50 per trade
+    if (ctx.cfg.sizingRule === 'equal') {
+      positionSizeUsd = ctx.allocationPerTrader / ctx.tradesPerTrader;
+      positionSizeUsd = Math.min(positionSizeUsd, 50);
     } else {
-      // Proportional sizing based on trader's trade size
-      const traderVolume = trades
-        .filter((t) => t.walletAddress === trade.walletAddress)
-        .reduce((sum, t) => sum + (t.usdcSize || t.size * t.price), 0);
-      positionSizeUsd = (tradeUsd / traderVolume) * allocationPerTrader;
+      const traderVolume = ctx.traderVolumes.get(trade.walletAddress) || tradeUsd;
+      positionSizeUsd = (tradeUsd / traderVolume) * ctx.allocationPerTrader;
     }
 
     // Check market exposure limit
     const currentExposure = marketExposure.get(trade.conditionId) || 0;
-    if (currentExposure + positionSizeUsd > maxExposureUsd) {
-      positionSizeUsd = Math.max(0, maxExposureUsd - currentExposure);
+    if (currentExposure + positionSizeUsd > ctx.maxExposureUsd) {
+      positionSizeUsd = Math.max(0, ctx.maxExposureUsd - currentExposure);
     }
+    if (positionSizeUsd < 1) continue;
 
-    if (positionSizeUsd < 1) continue; // Skip tiny positions
-
-    // Get market daily volume for impact calculation
-    const market = await dataStore.getMarket(trade.conditionId);
+    // Get cached market data
+    const market = ctx.marketCache.get(trade.conditionId);
     const dailyVolume = market?.dailyVolume || 100000;
 
-    // Calculate realistic fill
+    // Calculate realistic fill (no orderbook - use conservative slippage estimate)
     const fill = calculateRealisticFill(
       trade.side,
       positionSizeUsd,
-      orderbook,
-      cfg.marketImpactEnabled,
+      null, // No orderbook for speed
+      ctx.cfg.marketImpactEnabled,
       dailyVolume
     );
 
-    // Adjust for partial fills
     const actualSizeUsd = positionSizeUsd * fill.fillRatio;
     const shares = actualSizeUsd / fill.avgPrice;
-
-    // Update portfolio
     const posKey = `${trade.conditionId}_${trade.outcome}`;
 
     if (trade.side === 'BUY') {
-      // Opening or adding to position
       const existing = portfolio.positions.get(posKey);
       if (existing) {
         const newSize = existing.size + shares;
@@ -209,9 +193,8 @@ async function runSingleSimulation(
         });
       }
       portfolio.cash -= actualSizeUsd;
-      marketExposure.set(trade.conditionId, (marketExposure.get(trade.conditionId) || 0) + actualSizeUsd);
+      marketExposure.set(trade.conditionId, currentExposure + actualSizeUsd);
     } else {
-      // Closing position
       const existing = portfolio.positions.get(posKey);
       if (existing && existing.size > 0) {
         const sellShares = Math.min(shares, existing.size);
@@ -219,43 +202,42 @@ async function runSingleSimulation(
         portfolio.cash += sellShares * fill.avgPrice;
         existing.size -= sellShares;
 
-        // Track PnL
-        const dateKey = new Date(trade.timestamp).toISOString().split('T')[0];
+        const dateKey = new Date(trade.timestamp * 1000).toISOString().split('T')[0];
         dailyPnl.set(dateKey, (dailyPnl.get(dateKey) || 0) + pnl);
         marketPnl.set(trade.conditionId, (marketPnl.get(trade.conditionId) || 0) + pnl);
       }
     }
 
-    // Log the simulated trade
-    tradeLog.push({
-      originalTrade: trade,
-      simulatedEntryTime: entryTime,
-      intendedPrice: trade.price,
-      actualEntryPrice: fill.avgPrice,
-      priceMovement: priceAtEntry - trade.price,
-      slippageBps: fill.slippageBps,
-      positionSize: shares,
-      positionSizeUsd: actualSizeUsd,
-      exitPrice: 0, // Will be calculated at end
-      pnl: 0, // Will be calculated at end
-      partialFill: !fill.filled,
-      marketImpact: cfg.marketImpactEnabled ? fill.slippageBps * 0.3 : 0,
-    });
+    // Only log first 50 trades per simulation for memory efficiency
+    if (tradeLog.length < 50) {
+      tradeLog.push({
+        originalTrade: trade,
+        simulatedEntryTime: entryTime,
+        intendedPrice: trade.price,
+        actualEntryPrice: fill.avgPrice,
+        priceMovement: priceAtEntry - trade.price,
+        slippageBps: fill.slippageBps,
+        positionSize: shares,
+        positionSizeUsd: actualSizeUsd,
+        exitPrice: 0,
+        pnl: 0,
+        partialFill: !fill.filled,
+        marketImpact: ctx.cfg.marketImpactEnabled ? fill.slippageBps * 0.3 : 0,
+      });
+    }
   }
 
-  // Calculate final PnL including unrealized
+  // Calculate final PnL including unrealized (using cached market data)
   let unrealizedPnl = 0;
   for (const [posKey, pos] of portfolio.positions) {
     if (pos.size <= 0.001) continue;
 
-    const market = await dataStore.getMarket(pos.conditionId);
-
+    const market = ctx.marketCache.get(pos.conditionId);
     let exitPrice: number;
+
     if (market?.isClosed && market.winningOutcome) {
-      // Settled - use resolution price
       exitPrice = market.winningOutcome.toUpperCase() === pos.outcome.toUpperCase() ? 1.0 : 0.0;
     } else {
-      // Still open - use current price
       exitPrice = market?.lastPriceYes || 0.5;
       if (pos.outcome.toUpperCase() === 'NO') {
         exitPrice = 1 - exitPrice;
@@ -264,20 +246,13 @@ async function runSingleSimulation(
 
     const pnl = (exitPrice - pos.avgPrice) * pos.size;
     unrealizedPnl += pnl;
-
-    // Add to market PnL
     marketPnl.set(pos.conditionId, (marketPnl.get(pos.conditionId) || 0) + pnl);
   }
 
-  const totalPnlUsd = portfolio.cash - cfg.bankrollGbp * config.GBP_USD_RATE + unrealizedPnl;
+  const totalPnlUsd = portfolio.cash - ctx.initialCash + unrealizedPnl;
   const totalPnlGbp = totalPnlUsd / config.GBP_USD_RATE;
 
-  return {
-    finalPnl: totalPnlGbp,
-    dailyPnl,
-    marketPnl,
-    tradeLog,
-  };
+  return { finalPnl: totalPnlGbp, dailyPnl, marketPnl, tradeLog };
 }
 
 // ============================================
@@ -316,6 +291,7 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
   // Get top traders
   const leaderboard = await dataStore.getLeaderboard('realized_pnl', 10);
   const topTraders = leaderboard.map((e) => e.walletAddress);
+  const topTraderSet = new Set(topTraders);
 
   if (topTraders.length === 0) {
     throw new Error('No traders in leaderboard');
@@ -335,27 +311,78 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
 
   // Get trades for the window
   const windowStart = Date.now() - cfg.windowDays * 24 * 60 * 60 * 1000;
-  const trades = await dataStore.getTradesSince(windowStart);
+  const allTrades = await dataStore.getTradesSince(windowStart);
 
-  // Filter trades from followed traders
-  const relevantTrades = trades.filter(t => topTraders.includes(t.walletAddress));
+  // Pre-filter trades to only those from top traders and sort by timestamp
+  const relevantTrades = allTrades
+    .filter(t => topTraderSet.has(t.walletAddress))
+    .sort((a, b) => a.timestamp - b.timestamp);
 
   simulationLog.push({
     step: ++stepCounter,
     type: 'setup',
     description: `Loaded historical trade data for ${cfg.windowDays}-day window`,
     details: {
-      totalTradesInWindow: trades.length,
+      totalTradesInWindow: allTrades.length,
       tradesFromTopTraders: relevantTrades.length,
       windowStartDate: new Date(windowStart).toISOString(),
       windowEndDate: new Date().toISOString(),
     },
-    calculation: `${relevantTrades.length} trades from top traders / ${trades.length} total trades = ${((relevantTrades.length / trades.length) * 100).toFixed(1)}% coverage`,
+    calculation: allTrades.length > 0
+      ? `${relevantTrades.length} trades from top traders / ${allTrades.length} total trades = ${((relevantTrades.length / allTrades.length) * 100).toFixed(1)}% coverage`
+      : 'No trades in window',
   });
 
-  logger.info({ tradeCount: trades.length, traders: topTraders.length }, 'Loaded data for simulation');
+  logger.info({ tradeCount: relevantTrades.length, traders: topTraders.length }, 'Loaded data for simulation');
 
-  // Run Monte Carlo simulations
+  // Pre-calculate trader volumes for proportional sizing
+  const traderVolumes = new Map<string, number>();
+  for (const trade of relevantTrades) {
+    const vol = trade.usdcSize || trade.size * trade.price;
+    traderVolumes.set(trade.walletAddress, (traderVolumes.get(trade.walletAddress) || 0) + vol);
+  }
+
+  // Pre-fetch all unique market data at once
+  const uniqueConditionIds = [...new Set(relevantTrades.map(t => t.conditionId))];
+  const marketCache = new Map<string, MarketCache>();
+
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'setup',
+    description: `Pre-loading market data for ${uniqueConditionIds.length} unique markets`,
+    details: {
+      uniqueMarkets: uniqueConditionIds.length,
+      marketsPerTrader: uniqueConditionIds.length / topTraders.length,
+    },
+    calculation: `Caching market data to avoid DB lookups during simulation`,
+  });
+
+  // Batch fetch markets (this is the only async operation before simulations)
+  for (const conditionId of uniqueConditionIds) {
+    const market = await dataStore.getMarket(conditionId);
+    if (market) {
+      marketCache.set(conditionId, {
+        dailyVolume: market.dailyVolume || 100000,
+        isClosed: market.isClosed,
+        winningOutcome: market.winningOutcome,
+        lastPriceYes: market.lastPriceYes || 0.5,
+      });
+    }
+  }
+
+  // Build simulation context (all data needed for simulations)
+  const initialCash = cfg.bankrollGbp * config.GBP_USD_RATE;
+  const ctx: SimulationContext = {
+    cfg,
+    initialCash,
+    allocationPerTrader: initialCash / topTraders.length,
+    maxExposureUsd: initialCash * (cfg.maxExposurePct / 100),
+    traderVolumes,
+    marketCache,
+    tradesPerTrader: Math.max(1, relevantTrades.length / topTraders.length),
+  };
+
+  // Run Monte Carlo simulations (now fully synchronous!)
   const results: number[] = [];
   const allDailyPnl: Map<string, number[]> = new Map();
   const allMarketPnl: Map<string, number[]> = new Map();
@@ -376,17 +403,20 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
       iterations: cfg.numSimulations,
       randomSeed: seed,
       method: 'Linear Congruential Generator',
+      tradesPerIteration: relevantTrades.length,
     },
-    calculation: `Running ${cfg.numSimulations} simulations with random entry delays and price variations`,
+    calculation: `Running ${cfg.numSimulations} simulations × ${relevantTrades.length} trades = ${cfg.numSimulations * relevantTrades.length} trade simulations`,
   });
 
+  const simStartTime = Date.now();
   for (let i = 0; i < cfg.numSimulations; i++) {
-    const result = await runSingleSimulation(trades, cfg, topTraders, seededRandom);
+    // Synchronous simulation - no await!
+    const result = runSingleSimulation(relevantTrades, ctx, seededRandom);
     results.push(result.finalPnl);
 
     // Save sample trade log from first simulation
     if (i === 0) {
-      sampleTradeLog = result.tradeLog.slice(0, 20); // Keep first 20 trades as sample
+      sampleTradeLog = result.tradeLog.slice(0, 20);
     }
 
     // Aggregate daily PnL
@@ -401,6 +431,19 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
       allMarketPnl.get(market)!.push(pnl);
     }
   }
+  const simDuration = Date.now() - simStartTime;
+
+  simulationLog.push({
+    step: ++stepCounter,
+    type: 'summary',
+    description: `Completed ${cfg.numSimulations} Monte Carlo iterations`,
+    details: {
+      durationMs: simDuration,
+      iterationsPerSecond: Math.round(cfg.numSimulations / (simDuration / 1000)),
+      tradesProcessed: cfg.numSimulations * relevantTrades.length,
+    },
+    calculation: `${cfg.numSimulations} simulations completed in ${simDuration}ms (${Math.round(cfg.numSimulations / (simDuration / 1000))} iterations/sec)`,
+  });
 
   // Sort results for percentile calculation
   results.sort((a, b) => a - b);
