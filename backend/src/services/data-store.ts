@@ -71,7 +71,8 @@ export async function getWalletTrades(
   walletAddress: string,
   days: number = 7
 ): Promise<Trade[]> {
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  // Timestamps are in seconds (Unix epoch), convert cutoff to seconds
+  const cutoff = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
   const result = await query<any>(
     `SELECT * FROM trades_raw
      WHERE wallet_address = $1 AND timestamp >= $2
@@ -577,7 +578,8 @@ export async function setSystemState(key: string, value: any): Promise<void> {
 // ============================================
 
 export async function getTradesCount(hours: number = 1): Promise<number> {
-  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  // Timestamps are in seconds (Unix epoch), convert cutoff to seconds
+  const cutoff = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
   const result = await query<any>(
     `SELECT COUNT(*) as count FROM trades_raw WHERE timestamp >= $1`,
     [cutoff]

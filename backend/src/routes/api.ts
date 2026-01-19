@@ -258,7 +258,44 @@ router.get('/stream/leaderboard', (req: Request, res: Response) => {
 export function broadcastLeaderboard(leaderboard: any[]): void {
   const data = JSON.stringify({ type: 'leaderboard', data: leaderboard, timestamp: Date.now() });
   for (const client of sseClients) {
-    client.write(`data: ${data}\n\n`);
+    try {
+      client.write(`data: ${data}\n\n`);
+    } catch (e) {
+      // Client disconnected
+    }
+  }
+}
+
+// Broadcast status updates to SSE clients
+export async function broadcastStatus(): Promise<void> {
+  try {
+    const [tradesLast1h, activeWallets] = await Promise.all([
+      dataStore.getTradesCount(1),
+      dataStore.getActiveWalletsCount(),
+    ]);
+
+    const wsStatus = wsStream.getStatus();
+    const status = {
+      type: 'status',
+      data: {
+        tradesLast1h,
+        activeWallets,
+        wsConnected: wsStatus.tradeStream,
+        lastAggregation: getLastAggregationTime(),
+      },
+      timestamp: Date.now(),
+    };
+
+    const data = JSON.stringify(status);
+    for (const client of sseClients) {
+      try {
+        client.write(`data: ${data}\n\n`);
+      } catch (e) {
+        // Client disconnected
+      }
+    }
+  } catch (e) {
+    // Ignore broadcast errors
   }
 }
 

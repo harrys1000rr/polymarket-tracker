@@ -25,9 +25,13 @@ import {
 
 export default function Home() {
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
-  const { leaderboard, lastUpdated, isLoading, isError } = useLeaderboard('realized_pnl', 10);
+  const { leaderboard, lastUpdated, isLoading, isError, liveStatus, isConnected } = useLeaderboard('realized_pnl', 10);
   const { wallet, isLoading: walletLoading } = useWallet(selectedWallet);
   const { health } = useHealth();
+
+  // Use live status if available (real-time from SSE), fallback to health endpoint
+  const displayTradesLast1h = liveStatus?.tradesLast1h ?? health?.tradesLast1h;
+  const displayActiveWallets = liveStatus?.activeWallets ?? health?.activeWallets;
 
   return (
     <div className="space-y-6">
@@ -36,13 +40,13 @@ export default function Home() {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Active Traders (24h)</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {health?.activeWallets || '-'}
+            {displayActiveWallets != null ? displayActiveWallets.toLocaleString() : '-'}
           </p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Trades Last Hour</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {health?.tradesLast1h || '-'}
+            {displayTradesLast1h != null ? displayTradesLast1h.toLocaleString() : '-'}
           </p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
@@ -57,7 +61,9 @@ export default function Home() {
             <span
               className={clsx(
                 'w-2 h-2 rounded-full',
-                health?.status === 'healthy'
+                isConnected && liveStatus?.wsConnected
+                  ? 'bg-green-500 animate-pulse'
+                  : health?.status === 'healthy'
                   ? 'bg-green-500'
                   : health?.status === 'degraded'
                   ? 'bg-yellow-500'
@@ -65,7 +71,7 @@ export default function Home() {
               )}
             />
             <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-              {health?.status || 'Connecting...'}
+              {isConnected ? 'Live' : health?.status || 'Connecting...'}
             </span>
           </div>
           {lastUpdated && (

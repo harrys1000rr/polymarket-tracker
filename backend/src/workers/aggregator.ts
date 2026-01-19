@@ -24,9 +24,9 @@ export function processTrade(trade: Trade): void {
   const trades = walletTradeCache.get(trade.walletAddress) || [];
   trades.push(trade);
 
-  // Keep only last 7 days in memory
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const filtered = trades.filter((t) => t.timestamp >= cutoff);
+  // Keep only last 7 days in memory (timestamp is in seconds)
+  const cutoffSec = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+  const filtered = trades.filter((t) => t.timestamp >= cutoffSec);
   walletTradeCache.set(trade.walletAddress, filtered);
 
   // Immediately update wallet stats with this trade
@@ -93,10 +93,11 @@ export async function runFullAggregation(): Promise<void> {
 
 async function aggregateWalletStats(walletAddress: string): Promise<void> {
   try {
-    const now = Date.now();
-    const cutoff1h = now - 1 * 60 * 60 * 1000;
-    const cutoff24h = now - 24 * 60 * 60 * 1000;
-    const cutoff7d = now - 7 * 24 * 60 * 60 * 1000;
+    // Timestamps in DB are in seconds (Unix epoch), so convert cutoffs to seconds
+    const nowSec = Math.floor(Date.now() / 1000);
+    const cutoff1h = nowSec - 1 * 60 * 60;
+    const cutoff24h = nowSec - 24 * 60 * 60;
+    const cutoff7d = nowSec - 7 * 24 * 60 * 60;
 
     // Get trades from database
     const result = await query<any>(

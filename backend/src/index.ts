@@ -14,7 +14,7 @@ import {
   backfillTrades,
   syncMarkets,
 } from './workers/aggregator.js';
-import apiRoutes, { broadcastLeaderboard } from './routes/api.js';
+import apiRoutes, { broadcastLeaderboard, broadcastStatus } from './routes/api.js';
 import { Trade } from './models/types.js';
 
 const log = createChildLogger('main');
@@ -181,11 +181,12 @@ async function main() {
 
   startAggregator();
 
-  // Broadcast leaderboard updates every second
+  // Broadcast leaderboard and status updates every second
   setInterval(async () => {
     try {
       const leaderboard = await dataStore.getLeaderboard('realized_pnl', 10);
       broadcastLeaderboard(leaderboard);
+      await broadcastStatus();
     } catch (err) {
       // Silently ignore broadcast errors
     }

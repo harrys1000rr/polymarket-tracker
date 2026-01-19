@@ -25,10 +25,20 @@ const fetcher = async (url: string) => {
 // Leaderboard Hook with SSE for Live Updates
 // ============================================
 
+interface LiveStatus {
+  tradesLast1h: number;
+  activeWallets: number;
+  wsConnected: boolean;
+  lastAggregation: number;
+}
+
 export function useLeaderboard(
   metric: 'realized_pnl' | 'roi' | 'volume' = 'realized_pnl',
   limit: number = 10
 ) {
+  const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
   const { data, error, mutate } = useSWR<LeaderboardResponse>(
     `${API_URL}/api/leaderboard?metric=${metric}&limit=${limit}`,
     fetcher,
@@ -42,6 +52,10 @@ export function useLeaderboard(
   useEffect(() => {
     const eventSource = new EventSource(`${API_URL}/api/stream/leaderboard`);
 
+    eventSource.onopen = () => {
+      setIsConnected(true);
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const update = JSON.parse(event.data);
@@ -54,6 +68,8 @@ export function useLeaderboard(
             }),
             false
           );
+        } else if (update.type === 'status' && update.data) {
+          setLiveStatus(update.data);
         }
       } catch (e) {
         // Ignore parse errors
@@ -61,11 +77,13 @@ export function useLeaderboard(
     };
 
     eventSource.onerror = () => {
+      setIsConnected(false);
       // Will auto-reconnect
     };
 
     return () => {
       eventSource.close();
+      setIsConnected(false);
     };
   }, [mutate]);
 
@@ -75,6 +93,8 @@ export function useLeaderboard(
     isLoading: !error && !data,
     isError: error,
     refresh: mutate,
+    liveStatus,
+    isConnected,
   };
 }
 
