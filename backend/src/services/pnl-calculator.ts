@@ -145,10 +145,23 @@ export async function calculateRealPnL(daysBack: number = 7): Promise<Map<string
           realizedPnl += 0 - position.totalCost;
         }
       } else {
-        // Market not resolved - calculate unrealized PnL using current price
-        // For now, assume current price = average price (conservative)
-        // In production, we'd get latest market price
-        const currentValue = position.netPosition * position.averagePrice;
+        // Market not resolved - calculate unrealized PnL using current market price
+        // Get real current market price from markets table
+        const currentMarket = await query(`
+          SELECT last_price_yes, last_price_no 
+          FROM markets 
+          WHERE condition_id = $1
+        `, [position.conditionId]);
+        
+        let currentPrice = 0.5; // Default fallback
+        if (currentMarket.rows.length > 0) {
+          const market = currentMarket.rows[0];
+          currentPrice = position.outcome.toUpperCase() === 'YES' 
+            ? (parseFloat(market.last_price_yes) || 0.5)
+            : (parseFloat(market.last_price_no) || 0.5);
+        }
+        
+        const currentValue = position.netPosition * currentPrice;
         unrealizedPnl += currentValue - position.totalCost;
       }
     }
