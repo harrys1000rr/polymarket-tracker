@@ -1,4 +1,4 @@
-export function formatCurrency(value: number | null | undefined, currency: 'GBP' | 'USD' = 'GBP'): string {
+export function formatCurrency(value: number | null | undefined, currency: 'GBP' | 'USD' = 'USD'): string {
   const symbol = currency === 'GBP' ? '£' : '$';
   const safeValue = value ?? 0;
   const absValue = Math.abs(safeValue);
@@ -13,7 +13,7 @@ export function formatCurrency(value: number | null | undefined, currency: 'GBP'
   return `${safeValue < 0 ? '-' : ''}${symbol}${absValue.toFixed(2)}`;
 }
 
-export function formatPnl(value: number | null | undefined, currency: 'GBP' | 'USD' = 'GBP'): string {
+export function formatPnl(value: number | null | undefined, currency: 'GBP' | 'USD' = 'USD'): string {
   const safeValue = value ?? 0;
   const formatted = formatCurrency(Math.abs(safeValue), currency);
   if (safeValue > 0) return `+${formatted}`;

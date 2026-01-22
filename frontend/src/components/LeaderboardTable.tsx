@@ -23,9 +23,9 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
   const sorted = [...leaderboard].sort((a, b) => {
     switch (sortBy) {
       case 'pnl':
-        return (b.realizedPnlGbp || b.realizedPnl) - (a.realizedPnlGbp || a.realizedPnl);
+        return (b.realizedPnl || 0) - (a.realizedPnl || 0);
       case 'volume':
-        return (b.volumeGbp || b.volume) - (a.volumeGbp || a.volume);
+        return (b.volume || 0) - (a.volume || 0);
       case 'trades':
         return b.tradeCount - a.tradeCount;
       default:
@@ -76,7 +76,7 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
           </thead>
           <tbody className="divide-y divide-white/5">
             {sorted.map((entry, index) => {
-              const pnl = entry.realizedPnlGbp || entry.realizedPnl || 0;
+              const pnl = entry.realizedPnl || 0;
               const isPositive = pnl >= 0;
 
               return (
@@ -125,14 +125,14 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
                       'font-bold stat-number',
                       isPositive ? 'text-green-400' : 'text-red-400'
                     )}>
-                      {formatPnl(pnl, 'GBP')}
+                      {formatPnl(pnl, 'USD')}
                     </span>
                   </td>
 
                   {/* Volume */}
                   <td className="px-4 py-3 text-right hidden sm:table-cell">
                     <span className="text-sm text-gray-400 stat-number">
-                      {formatCurrency(entry.volumeGbp || entry.volume, 'GBP')}
+                      {formatCurrency(entry.volume, 'USD')}
                     </span>
                   </td>
 

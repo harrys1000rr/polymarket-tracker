@@ -88,7 +88,7 @@ export default function SimulatorPage() {
             <li>You could have detected and reacted to trades within the specified delay</li>
             <li>Your trades wouldn&apos;t have been front-run or detected by other copiers</li>
             <li>Transaction costs (gas fees) are not included</li>
-            <li>GBP/USD exchange rate is fixed at the current rate</li>
+            <li>All values displayed in USD</li>
             <li>Partial fills are accounted for when orderbook liquidity is insufficient</li>
           </ul>
         </div>

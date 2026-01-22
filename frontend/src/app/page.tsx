@@ -31,7 +31,7 @@ export default function Home() {
   // Use multiple fallback sources for stats (priority: live status > stats > health)
   const displayTradesLast1h = liveStatus?.tradesLast1h ?? stats?.tradesLast1h ?? health?.tradesLast1h ?? 0;
   const displayActiveWallets = liveStatus?.activeWallets ?? stats?.activeWallets ?? health?.activeWallets ?? 0;
-  const topTraderPnl = leaderboard[0]?.realizedPnlGbp || leaderboard[0]?.realizedPnl || 0;
+  const topTraderPnl = leaderboard[0]?.realizedPnl || 0;
 
   return (
     <div className="space-y-6">
@@ -54,7 +54,7 @@ export default function Home() {
         <StatCard
           icon="👑"
           label="Top Alpha (7d)"
-          value={formatPnl(topTraderPnl, 'GBP')}
+          value={formatPnl(topTraderPnl, 'USD')}
           subtext="best performer"
           color={topTraderPnl >= 0 ? 'green' : 'red'}
           highlight
@@ -239,8 +239,8 @@ function WalletDetailsPanel({
 
   if (!wallet) return null;
 
-  const pnl = wallet.stats?.['7d']?.pnlGbp || 0;
-  const volume = wallet.stats?.['7d']?.volumeGbp || 0;
+  const pnl = wallet.stats?.['7d']?.pnl || 0;
+  const volume = wallet.stats?.['7d']?.volume || 0;
   const trades = wallet.stats?.['7d']?.trades || 0;
   const winRate = (wallet.stats?.['7d']?.winRate || 0) * 100;
 
@@ -262,12 +262,12 @@ function WalletDetailsPanel({
         <div className="rounded-lg bg-white/5 p-3">
           <p className="text-xs text-gray-500">7d PnL</p>
           <p className={clsx('text-lg font-bold', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
-            {formatPnl(pnl, 'GBP')}
+            {formatPnl(pnl, 'USD')}
           </p>
         </div>
         <div className="rounded-lg bg-white/5 p-3">
           <p className="text-xs text-gray-500">Volume</p>
-          <p className="text-lg font-bold text-white">{formatCurrency(volume, 'GBP')}</p>
+          <p className="text-lg font-bold text-white">{formatCurrency(volume, 'USD')}</p>
         </div>
         <div className="rounded-lg bg-white/5 p-3">
           <p className="text-xs text-gray-500">Trades</p>
@@ -294,7 +294,7 @@ function WalletDetailsPanel({
                     <span className="text-sm text-gray-300">{trade.outcome}</span>
                   </div>
                   <span className="text-sm font-medium text-white">
-                    {formatCurrency(trade.usdcSizeGbp || 0, 'GBP')}
+                    {formatCurrency(trade.usdcSizeUsd || 0, 'USD')}
                   </span>
                 </div>
                 {trade.marketTitle && (

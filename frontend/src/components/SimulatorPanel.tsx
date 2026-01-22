@@ -36,7 +36,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
 
   const handleRunSimulation = () => {
     runSimulation({
-      bankrollGbp: bankroll,
+      bankrollUsd: bankroll,
       entryDelaySec: entryDelay,
       delayVarianceSec: delayVariance,
       sizingRule,
@@ -59,7 +59,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Bankroll (GBP)
+              Bankroll (USD)
             </label>
             <input
               type="number"
@@ -77,20 +77,20 @@ export default function SimulatorPanel({ compact = false }: Props) {
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div>
                   <p className="text-xs text-gray-500">Worst Case</p>
-                  <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlGbp.low))}>
-                    {formatPnl(estimate.estimatedPnlGbp.low, 'GBP')}
+                  <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlUsd.low))}>
+                    {formatPnl(estimate.estimatedPnlUsd.low, 'USD')}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Expected</p>
-                  <p className={clsx('font-bold text-lg', getPnlColor(estimate.estimatedPnlGbp.mid))}>
-                    {formatPnl(estimate.estimatedPnlGbp.mid, 'GBP')}
+                  <p className={clsx('font-bold text-lg', getPnlColor(estimate.estimatedPnlUsd.mid))}>
+                    {formatPnl(estimate.estimatedPnlUsd.mid, 'USD')}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Best Case</p>
-                  <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlGbp.high))}>
-                    {formatPnl(estimate.estimatedPnlGbp.high, 'GBP')}
+                  <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlUsd.high))}>
+                    {formatPnl(estimate.estimatedPnlUsd.high, 'USD')}
                   </p>
                 </div>
               </div>
@@ -133,7 +133,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Bankroll (GBP)
+                Bankroll (USD)
               </label>
               <input
                 type="number"
@@ -275,20 +275,20 @@ export default function SimulatorPanel({ compact = false }: Props) {
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div className="p-3 bg-white dark:bg-gray-800 rounded">
                     <p className="text-xs text-gray-500 mb-1">5th Percentile</p>
-                    <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlGbp.low))}>
-                      {formatPnl(estimate.estimatedPnlGbp.low, 'GBP')}
+                    <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlUsd.low))}>
+                      {formatPnl(estimate.estimatedPnlUsd.low, 'USD')}
                     </p>
                   </div>
                   <div className="p-3 bg-white dark:bg-gray-800 rounded border-2 border-primary-500">
                     <p className="text-xs text-gray-500 mb-1">Expected</p>
-                    <p className={clsx('font-bold text-xl', getPnlColor(estimate.estimatedPnlGbp.mid))}>
-                      {formatPnl(estimate.estimatedPnlGbp.mid, 'GBP')}
+                    <p className={clsx('font-bold text-xl', getPnlColor(estimate.estimatedPnlUsd.mid))}>
+                      {formatPnl(estimate.estimatedPnlUsd.mid, 'USD')}
                     </p>
                   </div>
                   <div className="p-3 bg-white dark:bg-gray-800 rounded">
                     <p className="text-xs text-gray-500 mb-1">95th Percentile</p>
-                    <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlGbp.high))}>
-                      {formatPnl(estimate.estimatedPnlGbp.high, 'GBP')}
+                    <p className={clsx('font-semibold', getPnlColor(estimate.estimatedPnlUsd.high))}>
+                      {formatPnl(estimate.estimatedPnlUsd.high, 'USD')}
                     </p>
                   </div>
                 </div>
@@ -306,19 +306,19 @@ export default function SimulatorPanel({ compact = false }: Props) {
                     <div className="p-3 bg-white dark:bg-gray-800 rounded">
                       <p className="text-xs text-gray-500 mb-1">5th Percentile</p>
                       <p className={clsx('font-semibold', getPnlColor(results.results.pnlP5))}>
-                        {formatPnl(results.results.pnlP5, 'GBP')}
+                        {formatPnl(results.results.pnlP5, 'USD')}
                       </p>
                     </div>
                     <div className="p-3 bg-white dark:bg-gray-800 rounded border-2 border-primary-500">
                       <p className="text-xs text-gray-500 mb-1">Median</p>
                       <p className={clsx('font-bold text-xl', getPnlColor(results.results.pnlMedian))}>
-                        {formatPnl(results.results.pnlMedian, 'GBP')}
+                        {formatPnl(results.results.pnlMedian, 'USD')}
                       </p>
                     </div>
                     <div className="p-3 bg-white dark:bg-gray-800 rounded">
                       <p className="text-xs text-gray-500 mb-1">95th Percentile</p>
                       <p className={clsx('font-semibold', getPnlColor(results.results.pnlP95))}>
-                        {formatPnl(results.results.pnlP95, 'GBP')}
+                        {formatPnl(results.results.pnlP95, 'USD')}
                       </p>
                     </div>
                   </div>
@@ -327,7 +327,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
                     <div>
                       <span className="text-gray-500">Mean:</span>{' '}
                       <span className={getPnlColor(results.results.pnlMean)}>
-                        {formatPnl(results.results.pnlMean, 'GBP')}
+                        {formatPnl(results.results.pnlMean, 'USD')}
                       </span>
                     </div>
                     <div>
@@ -349,7 +349,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                         <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip
-                          formatter={(value: number) => [formatPnl(value, 'GBP'), '']}
+                          formatter={(value: number) => [formatPnl(value, 'USD'), '']}
                           labelStyle={{ color: '#374151' }}
                         />
                         <ReferenceLine y={0} stroke="#9CA3AF" />
@@ -372,7 +372,7 @@ export default function SimulatorPanel({ compact = false }: Props) {
                             {mc.market}
                           </span>
                           <span className={clsx('font-medium', getPnlColor(mc.pnlContribution))}>
-                            {formatPnl(mc.pnlContribution, 'GBP')}
+                            {formatPnl(mc.pnlContribution, 'USD')}
                           </span>
                         </div>
                       ))}
