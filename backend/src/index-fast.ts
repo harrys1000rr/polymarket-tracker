@@ -31,65 +31,92 @@ async function main() {
   app.use(compression());
   app.use(express.json({ limit: '10mb' }));
 
-  // Health check - ALWAYS works
-  app.get('/api/health', (req, res) => {
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      message: 'Fast startup backend is running',
-      dbConnected: true, // We'll make this work
-      wsConnected: false, // Will connect in background
-      tradesLast1h: 1000, // Mock data for now
-      activeWallets: 500,
-    });
-  });
-
-  // USD API endpoint - ALWAYS works
-  app.get('/api/follower-sim', (req, res) => {
-    const bankrollUsd = parseFloat(req.query.bankroll_usd as string) || 100;
-    
-    res.json({
-      type: 'quick_estimate',
-      bankrollUsd: bankrollUsd,
-      estimatedPnlUsd: {
-        low: bankrollUsd * 0.1,
-        mid: bankrollUsd * 0.25,
-        high: bankrollUsd * 0.5,
-      },
-      topTraders: [
-        {
-          rank: 1,
-          walletAddress: '0x48fe10cd940a030eb18348ad812e0c382a4cb2b6',
-          realizedPnl: 32152.01822,
-          volume: 37835.70182,
-          tradeCount: 5,
+  // Health check - Real data only
+  app.get('/api/health', async (req, res) => {
+    try {
+      // Try to get real database status
+      const { checkConnection } = await import('./models/database.js');
+      const dbConnected = await checkConnection();
+      
+      let tradesLast1h = 0;
+      let activeWallets = 0;
+      
+      if (dbConnected) {
+        try {
+          const dataStore = await import('./services/data-store.js');
+          tradesLast1h = await dataStore.getTradesCount(1);
+          activeWallets = await dataStore.getActiveWalletsCount();
+        } catch (e) {
+          // Database queries failed but connection exists
         }
-      ],
-      disclaimer: 'Fast startup mode - connecting to real data...'
-    });
+      }
+      
+      res.json({
+        status: dbConnected ? 'healthy' : 'degraded',
+        timestamp: new Date().toISOString(),
+        message: 'Real data backend',
+        dbConnected: dbConnected,
+        wsConnected: false, // Will be real status later
+        tradesLast1h: tradesLast1h,
+        activeWallets: activeWallets,
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        message: 'Database unavailable - no fake data',
+        error: 'Real data systems starting up'
+      });
+    }
   });
 
-  // Leaderboard endpoint - ALWAYS works
-  app.get('/api/leaderboard', (req, res) => {
-    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
-    
-    res.json({
-      timestamp: new Date().toISOString(),
-      window: '7d',
-      metric: 'realized_pnl',
-      leaderboard: Array.from({ length: limit }, (_, i) => ({
-        rank: i + 1,
-        walletAddress: `0x${Math.random().toString(16).substring(2, 42)}`,
-        realizedPnl: Math.random() * 50000,
-        volume: Math.random() * 100000,
-        tradeCount: Math.floor(Math.random() * 100),
-        winRate: Math.random(),
-        roiPercent: Math.random() * 100,
-        uniqueMarkets: Math.floor(Math.random() * 50),
-        lastTradeSeen: new Date().toISOString(),
-      })),
-      lastUpdated: new Date().toISOString(),
-    });
+  // USD API endpoint - Real data only
+  app.get('/api/follower-sim', async (req, res) => {
+    try {
+      const bankrollUsd = parseFloat(req.query.bankroll_usd as string) || 100;
+      
+      // Import real simulator function
+      const { getQuickEstimate } = await import('./services/simulator.js');
+      const estimate = await getQuickEstimate(bankrollUsd);
+      
+      res.json({
+        type: 'quick_estimate',
+        bankrollUsd: bankrollUsd,
+        ...estimate,
+      });
+    } catch (error) {
+      // If real data fails, return error - NO FAKE DATA
+      res.status(503).json({ 
+        error: 'Real data temporarily unavailable',
+        message: 'No fake data - please try again shortly'
+      });
+    }
+  });
+
+  // Leaderboard endpoint - Real data only
+  app.get('/api/leaderboard', async (req, res) => {
+    try {
+      const metric = (req.query.metric as string) || 'realized_pnl';
+      const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      
+      // Import real data store
+      const dataStore = await import('./services/data-store.js');
+      const leaderboard = await dataStore.getLeaderboard(metric as any, limit);
+      
+      res.json({
+        timestamp: new Date().toISOString(),
+        window: '7d',
+        metric: metric,
+        leaderboard: leaderboard,
+        lastUpdated: new Date().toISOString(),
+      });
+    } catch (error) {
+      // If real data fails, return error - NO FAKE DATA
+      res.status(503).json({ 
+        error: 'Real leaderboard data temporarily unavailable',
+        message: 'No fake data - please try again shortly'
+      });
+    }
   });
 
   // Root endpoint
@@ -137,13 +164,23 @@ async function main() {
     
     // All the slow stuff happens here - after server is already running
     try {
-      // Database connection
+      // Database connection and migrations - CRITICAL for real data
       const { runMigrations, checkConnection } = await import('./models/database.js');
       const dbOk = await checkConnection();
       if (dbOk) {
         log.info('Database connected in background');
         await runMigrations();
         log.info('Migrations completed in background');
+        
+        // Start backfill for real data
+        const { backfillTrades } = await import('./workers/aggregator.js');
+        backfillTrades(1).then(() => {
+          log.info('Real data backfill completed');
+        }).catch((err) => {
+          log.error({ err }, 'Backfill failed - will have limited real data');
+        });
+      } else {
+        log.error('Database connection failed - no real data available');
       }
       
       // Data store initialization

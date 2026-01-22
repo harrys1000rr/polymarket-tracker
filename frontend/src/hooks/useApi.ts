@@ -20,28 +20,7 @@ const fetcher = async (url: string) => {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) {
-      // Return mock data on API failure for resilience
-      if (url.includes('/api/leaderboard')) {
-        return {
-          timestamp: new Date().toISOString(),
-          window: '7d',
-          metric: 'realized_pnl',
-          leaderboard: [
-            {
-              rank: 1,
-              walletAddress: '0x48fe10cd940a030eb18348ad812e0c382a4cb2b6',
-              realizedPnl: 32152.01822,
-              volume: 37835.70182,
-              tradeCount: 5,
-              winRate: 0.8,
-              roiPercent: 85.2,
-              uniqueMarkets: 5,
-              lastTradeSeen: new Date().toISOString(),
-            }
-          ],
-          lastUpdated: new Date().toISOString(),
-        };
-      }
+      // NO FAKE DATA - throw error for real failures
       throw new Error(`API request failed: ${res.status}`);
     }
     return res.json();
@@ -84,26 +63,15 @@ export function useLeaderboard(
       shouldRetryOnError: true,
       revalidateOnMount: true,
       revalidateIfStale: true,
-      fallbackData: {
-        timestamp: new Date().toISOString(),
-        window: '7d',
-        metric: 'realized_pnl',
-        leaderboard: [],
-        lastUpdated: new Date().toISOString(),
-      }, // Immediate fallback data
+      // NO FALLBACK DATA - show loading/error states instead
     }
   );
 
-  // Disable SSE for now - rely on fast polling instead
+  // NO SSE - rely only on real polling data
   useEffect(() => {
-    // Mock connection status for UI
-    setIsConnected(true);
-    setLiveStatus({
-      tradesLast1h: 1000,
-      activeWallets: 500,
-      wsConnected: true,
-      lastAggregation: Date.now(),
-    });
+    // NO FAKE STATUS - will get real status from API calls
+    setIsConnected(false);
+    setLiveStatus(null);
   }, []);
 
   return {
