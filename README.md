@@ -2,6 +2,13 @@
 
 A **real-time** analytics platform that monitors top Polymarket traders and provides a realistic "copy trading" performance simulator.
 
+## 🌐 Live Demo
+
+**Frontend:** https://p01--frontend--h769bkzvfdpf.code.run  
+**Backend API:** https://p01--backend--h769bkzvfdpf.code.run
+
+> **Note:** Features real-time leaderboard of top Polymarket traders with actual PnL data from Polymarket's official API.
+
 ## Features
 
 - **Real-time Leaderboard**: Live updates via Server-Sent Events showing top 10 traders by realized PnL
