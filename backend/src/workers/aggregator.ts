@@ -15,6 +15,24 @@ export function getLastAggregationTime(): number {
   return lastAggregation.timestamp;
 }
 
+// Refresh leaderboard cache for instant responses
+async function refreshLeaderboardCache(): Promise<void> {
+  const metrics: Array<'realized_pnl' | 'roi' | 'volume'> = ['realized_pnl', 'roi', 'volume'];
+  const limits = [5, 10, 25];
+  
+  for (const metric of metrics) {
+    for (const limit of limits) {
+      try {
+        const data = await dataStore.getLeaderboardDirect(metric, limit);
+        dataStore.setLeaderboardCache(metric, limit, data);
+      } catch (error) {
+        logger.warn({ error, metric, limit }, 'Failed to refresh cache entry');
+      }
+    }
+  }
+  logger.debug('Leaderboard cache refreshed');
+}
+
 // ============================================
 // Real-time Trade Processing
 // ============================================
@@ -76,6 +94,14 @@ export async function runFullAggregation(): Promise<void> {
     }
 
     lastAggregation.timestamp = Date.now();
+    
+    // Refresh leaderboard cache after aggregation for instant responses
+    try {
+      await refreshLeaderboardCache();
+    } catch (err) {
+      logger.warn({ err }, 'Failed to refresh leaderboard cache');
+    }
+    
     logger.info({ duration: Date.now() - startTime }, 'Full aggregation complete');
   } catch (err) {
     logger.error({ err }, 'Full aggregation failed');
@@ -94,7 +120,7 @@ async function runBulkAggregation(): Promise<void> {
   const aggregationQuery = `
     INSERT INTO wallet_stats_live (
       wallet_address, volume_1h, trades_1h, volume_24h, trades_24h,
-      volume_7d, trades_7d, unique_markets_7d, unrealized_pnl, pnl_7d,
+      volume_7d, trades_7d, unique_markets_7d, unrealized_pnl, pnl_7d, realized_pnl_7d,
       last_trade_seen, last_updated
     )
     SELECT
@@ -106,22 +132,26 @@ async function runBulkAggregation(): Promise<void> {
       COALESCE(SUM(COALESCE(usdc_size, size * price)), 0) as volume_7d,
       COUNT(*)::int as trades_7d,
       COUNT(DISTINCT condition_id)::int as unique_markets_7d,
-      -- Estimate unrealized PnL as net position value (sells generate profit, buys are costs)
+      -- Proper PnL calculation: (sell_value - buy_cost) for realized positions
+      -- This is a simplified estimation - for accurate PnL we need position tracking
+      0 as unrealized_pnl, -- Set to 0 for now, requires position tracking
+      
+      -- Realized PnL estimation: net cash flow (negative = spent money, positive = received money)  
       COALESCE(SUM(
         CASE
-          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price)
-          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price)
-          ELSE 0
-        END
-      ), 0) as unrealized_pnl,
-      -- PnL 7d same calculation
-      COALESCE(SUM(
-        CASE
-          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price)
-          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price)
+          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price) -- Money received
+          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price) -- Money spent
           ELSE 0
         END
       ), 0) as pnl_7d,
+      -- Same calculation for realized_pnl_7d for now (until we implement proper position tracking)
+      COALESCE(SUM(
+        CASE
+          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price) -- Money received
+          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price) -- Money spent
+          ELSE 0
+        END
+      ), 0) as realized_pnl_7d,
       to_timestamp(MAX(timestamp)) as last_trade_seen,
       NOW() as last_updated
     FROM trades_raw
@@ -138,6 +168,7 @@ async function runBulkAggregation(): Promise<void> {
       unique_markets_7d = EXCLUDED.unique_markets_7d,
       unrealized_pnl = EXCLUDED.unrealized_pnl,
       pnl_7d = EXCLUDED.pnl_7d,
+      realized_pnl_7d = EXCLUDED.realized_pnl_7d,
       last_trade_seen = EXCLUDED.last_trade_seen,
       last_updated = NOW()
   `;

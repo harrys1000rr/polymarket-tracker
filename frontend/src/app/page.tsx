@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useLeaderboard, useWallet, useHealth } from '@/hooks/useApi';
+import { useLeaderboard, useWallet, useHealth, useStats } from '@/hooks/useApi';
 import LeaderboardTable from '@/components/LeaderboardTable';
 import SimulatorPanel from '@/components/SimulatorPanel';
 import {
@@ -17,6 +17,7 @@ export default function Home() {
   const { leaderboard, lastUpdated, isLoading, isError, liveStatus, isConnected } = useLeaderboard('realized_pnl', 10);
   const { wallet, isLoading: walletLoading } = useWallet(selectedWallet);
   const { health } = useHealth();
+  const { stats } = useStats(); // Reliable fallback for stats
   const [retryCount, setRetryCount] = useState(0);
 
   // Auto retry on error
@@ -27,8 +28,9 @@ export default function Home() {
     }
   }, [isError, retryCount]);
 
-  const displayTradesLast1h = liveStatus?.tradesLast1h ?? health?.tradesLast1h ?? 0;
-  const displayActiveWallets = liveStatus?.activeWallets ?? health?.activeWallets ?? 0;
+  // Use multiple fallback sources for stats (priority: live status > stats > health)
+  const displayTradesLast1h = liveStatus?.tradesLast1h ?? stats?.tradesLast1h ?? health?.tradesLast1h ?? 0;
+  const displayActiveWallets = liveStatus?.activeWallets ?? stats?.activeWallets ?? health?.activeWallets ?? 0;
   const topTraderPnl = leaderboard[0]?.realizedPnlGbp || leaderboard[0]?.realizedPnl || 0;
 
   return (

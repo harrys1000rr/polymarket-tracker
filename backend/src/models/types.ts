@@ -181,7 +181,7 @@ export interface Market {
 // ============================================
 
 export interface SimulationConfig {
-  bankrollGbp: number;
+  bankrollUsd: number;
   entryDelaySec: number;
   delayVarianceSec: number;
   sizingRule: 'equal' | 'proportional';
@@ -194,7 +194,7 @@ export interface SimulationConfig {
 }
 
 export const SimulationConfigSchema = z.object({
-  bankrollGbp: z.number().min(10).max(100000).default(100),
+  bankrollUsd: z.number().min(10).max(100000).default(100),
   entryDelaySec: z.number().min(0).max(3600).default(60),
   delayVarianceSec: z.number().min(0).max(300).default(30),
   sizingRule: z.enum(['equal', 'proportional']).default('equal'),

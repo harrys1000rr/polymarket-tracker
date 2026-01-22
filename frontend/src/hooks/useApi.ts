@@ -14,7 +14,7 @@ const API_URL = 'https://p01--backend--h769bkzvfdpf.code.run';
 
 const fetcher = async (url: string) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+  const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout for instant feel
 
   try {
     const res = await fetch(url, { signal: controller.signal });
@@ -54,12 +54,14 @@ export function useLeaderboard(
     `${API_URL}/api/leaderboard?metric=${metric}&limit=${limit}`,
     fetcher,
     {
-      refreshInterval: 3000, // Fallback polling
+      refreshInterval: 2000, // Fast polling for instant feel
       revalidateOnFocus: true,
-      errorRetryCount: 3,
-      errorRetryInterval: 2000,
-      dedupingInterval: 2000,
+      errorRetryCount: 5, // More retries
+      errorRetryInterval: 1000, // Faster retries
+      dedupingInterval: 500, // Less deduplication for instant response
       shouldRetryOnError: true,
+      revalidateOnMount: true, // Always fetch on mount
+      revalidateIfStale: true, // Revalidate stale data
     }
   );
 
@@ -138,9 +140,9 @@ export function useWallet(address: string | null) {
 // Quick Estimate Hook
 // ============================================
 
-export function useQuickEstimate(bankrollGbp: number = 100) {
+export function useQuickEstimate(bankrollUsd: number = 100) {
   const { data, error, mutate } = useSWR<QuickEstimate>(
-    `${API_URL}/api/follower-sim?bankroll_gbp=${bankrollGbp}`,
+    `${API_URL}/api/follower-sim?bankroll_usd=${bankrollUsd}`,
     fetcher,
     {
       refreshInterval: 30000,
@@ -175,7 +177,7 @@ export function useSimulation() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          bankrollGbp: config.bankrollGbp || 100,
+          bankrollUsd: config.bankrollUsd || 100,
           entryDelaySec: config.entryDelaySec || 60,
           delayVarianceSec: config.delayVarianceSec || 30,
           sizingRule: config.sizingRule || 'equal',
@@ -246,6 +248,38 @@ export function useRecentTrades(limit: number = 50) {
 
   return {
     trades: data?.trades || [],
+    isLoading: !error && !data,
+    isError: error,
+    refresh: mutate,
+  };
+}
+
+// ============================================
+// Stats Hook (reliable fallback)
+// ============================================
+
+interface StatsResponse {
+  tradesLast1h: number;
+  tradesLast24h: number;
+  activeWallets: number;
+  lastAggregation: string;
+  gbpUsdRate: number;
+}
+
+export function useStats() {
+  const { data, error, mutate } = useSWR<StatsResponse>(
+    `${API_URL}/api/stats`,
+    fetcher,
+    {
+      refreshInterval: 5000,
+      dedupingInterval: 2000,
+      shouldRetryOnError: true,
+      errorRetryCount: 3,
+    }
+  );
+
+  return {
+    stats: data,
     isLoading: !error && !data,
     isError: error,
     refresh: mutate,

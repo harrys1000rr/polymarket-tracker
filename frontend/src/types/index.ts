@@ -12,11 +12,11 @@ export interface LeaderboardEntry {
   roiPercent: number;
   uniqueMarkets: number;
   lastTradeSeen?: string;
-  // GBP conversions
-  realizedPnlGbp?: number;
-  unrealizedPnlGbp?: number;
-  totalPnlGbp?: number;
-  volumeGbp?: number;
+  // USD values (main currency)
+  realizedPnlUsd?: number;
+  unrealizedPnlUsd?: number;
+  totalPnlUsd?: number;
+  volumeUsd?: number;
 }
 
 export interface LeaderboardResponse {
@@ -29,12 +29,12 @@ export interface LeaderboardResponse {
 
 export interface WalletStats {
   pnl: number;
-  pnlGbp?: number;
+  pnlUsd?: number;
   volume: number;
-  volumeGbp?: number;
+  volumeUsd?: number;
   trades: number;
   realizedPnl?: number;
-  realizedPnlGbp?: number;
+  realizedPnlUsd?: number;
   unrealizedPnl?: number;
   winRate?: number;
   uniqueMarkets?: number;
@@ -50,7 +50,7 @@ export interface Trade {
   size: number;
   price: number;
   usdcSize?: number;
-  usdcSizeGbp?: number;
+  usdcSizeUsd?: number;
   timestamp: number;
   txHash?: string;
   marketTitle?: string;
@@ -70,7 +70,7 @@ export interface WalletResponse {
 }
 
 export interface SimulationConfig {
-  bankrollGbp: number;
+  bankrollUsd: number;
   entryDelaySec: number;
   delayVarianceSec: number;
   sizingRule: 'equal' | 'proportional';
@@ -118,7 +118,7 @@ export interface SimulationResults {
     pnlMean: number;
     sharpeRatio: number;
   };
-  resultsGbp?: {
+  resultsUsd?: {
     pnlP5: number;
     pnlP25: number;
     pnlMedian: number;
@@ -150,8 +150,8 @@ export interface SimulationResults {
 
 export interface QuickEstimate {
   type: 'quick_estimate';
-  bankrollGbp: number;
-  estimatedPnlGbp: {
+  bankrollUsd: number;
+  estimatedPnlUsd: {
     low: number;
     mid: number;
     high: number;

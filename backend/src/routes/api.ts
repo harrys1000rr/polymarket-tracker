@@ -85,11 +85,11 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
       leaderboard: leaderboard.map((entry) => {
         return {
           ...entry,
-          // Convert to GBP for display
-          realizedPnlGbp: entry.realizedPnl / config.GBP_USD_RATE,
-          unrealizedPnlGbp: entry.unrealizedPnl / config.GBP_USD_RATE,
-          totalPnlGbp: entry.totalPnl / config.GBP_USD_RATE,
-          volumeGbp: entry.volume / config.GBP_USD_RATE,
+          // Values already in USD - no conversion needed
+          realizedPnlUsd: entry.realizedPnl,
+          unrealizedPnlUsd: entry.unrealizedPnl,
+          totalPnlUsd: entry.totalPnl,
+          volumeUsd: entry.volume,
           // Include recent trades if requested
           recentTrades: includeTrades ? (recentTradesMap.get(entry.walletAddress) || []).map(t => ({
             side: t.side,
@@ -97,7 +97,7 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
             size: t.size,
             price: t.price,
             usdcSize: t.usdcSize,
-            usdcSizeGbp: (t.usdcSize || t.size * t.price) / config.GBP_USD_RATE,
+            usdcSizeUsd: (t.usdcSize || t.size * t.price),
             marketTitle: t.marketTitle,
             marketSlug: t.marketSlug,
             timestamp: t.timestamp,
@@ -168,12 +168,12 @@ router.get('/wallet/:address', async (req: Request, res: Response) => {
         },
         '7d': {
           pnl: stats.pnl7d,
-          pnlGbp: stats.pnl7d / config.GBP_USD_RATE,
+          pnlUsd: stats.pnl7d,
           volume: stats.volume7d,
-          volumeGbp: stats.volume7d / config.GBP_USD_RATE,
+          volumeUsd: stats.volume7d,
           trades: stats.trades7d,
           realizedPnl: stats.realizedPnl7d,
-          realizedPnlGbp: stats.realizedPnl7d / config.GBP_USD_RATE,
+          realizedPnlUsd: stats.realizedPnl7d,
           unrealizedPnl: stats.unrealizedPnl,
           winRate: stats.settledTrades7d > 0
             ? stats.winningTrades7d / stats.settledTrades7d
@@ -183,7 +183,7 @@ router.get('/wallet/:address', async (req: Request, res: Response) => {
       },
       recentTrades: trades.slice(0, 50).map((t) => ({
         ...t,
-        usdcSizeGbp: (t.usdcSize || t.size * t.price) / config.GBP_USD_RATE,
+        usdcSizeUsd: (t.usdcSize || t.size * t.price),
       })),
       pnlChart,
       lastUpdated: stats.lastUpdated?.toISOString(),
@@ -234,12 +234,12 @@ router.post('/follower-sim', async (req: Request, res: Response) => {
 // GET version for quick estimates
 router.get('/follower-sim', async (req: Request, res: Response) => {
   try {
-    const bankroll = parseFloat(req.query.bankroll_gbp as string) || 100;
+    const bankroll = parseFloat(req.query.bankroll_usd as string) || 100;
     const estimate = await getQuickEstimate(bankroll);
 
     res.json({
       type: 'quick_estimate',
-      bankrollGbp: bankroll,
+      bankrollUsd: bankroll,
       ...estimate,
     });
   } catch (err) {
@@ -356,7 +356,7 @@ router.get('/trades/recent', async (req: Request, res: Response) => {
     res.json({
       trades: trades.map((t) => ({
         ...t,
-        usdcSizeGbp: (t.usdcSize || t.size * t.price) / config.GBP_USD_RATE,
+        usdcSizeUsd: (t.usdcSize || t.size * t.price),
       })),
       count: trades.length,
     });
@@ -383,7 +383,6 @@ router.get('/stats', async (req: Request, res: Response) => {
       tradesLast24h,
       activeWallets,
       lastAggregation: new Date(getLastAggregationTime() || Date.now()).toISOString(),
-      gbpUsdRate: config.GBP_USD_RATE,
     });
   } catch (err) {
     logger.error({ err }, 'Stats fetch failed');

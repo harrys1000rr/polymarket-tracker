@@ -256,9 +256,8 @@ function runSingleSimulation(
   }
 
   const totalPnlUsd = portfolio.cash - ctx.initialCash + unrealizedPnl;
-  const totalPnlGbp = totalPnlUsd / config.GBP_USD_RATE;
 
-  return { finalPnl: totalPnlGbp, dailyPnl, marketPnl, tradeLog };
+  return { finalPnl: totalPnlUsd, dailyPnl, marketPnl, tradeLog };
 }
 
 // ============================================
@@ -279,8 +278,7 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
     type: 'setup',
     description: 'Initializing simulation parameters',
     details: {
-      bankrollGbp: cfg.bankrollGbp,
-      bankrollUsd: cfg.bankrollGbp * config.GBP_USD_RATE,
+      bankrollUsd: cfg.bankrollUsd,
       entryDelaySec: cfg.entryDelaySec,
       delayVarianceSec: cfg.delayVarianceSec,
       sizingRule: cfg.sizingRule,
@@ -291,7 +289,7 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
       numSimulations: cfg.numSimulations,
       windowDays: cfg.windowDays,
     },
-    calculation: `Initial capital: £${cfg.bankrollGbp} × ${config.GBP_USD_RATE} (GBP/USD rate) = $${(cfg.bankrollGbp * config.GBP_USD_RATE).toFixed(2)}`,
+    calculation: `Initial capital: $${cfg.bankrollUsd.toFixed(2)}`,
   });
 
   // Get top traders
@@ -377,7 +375,7 @@ export async function runSimulation(cfg: SimulationConfig): Promise<SimulationRe
   }
 
   // Build simulation context (all data needed for simulations)
-  const initialCash = cfg.bankrollGbp * config.GBP_USD_RATE;
+  const initialCash = cfg.bankrollUsd;
   const ctx: SimulationContext = {
     cfg,
     initialCash,
@@ -621,9 +619,9 @@ Past performance does not guarantee future results. This is NOT financial advice
 // ============================================
 
 export async function getQuickEstimate(
-  bankrollGbp: number = 100
+  bankrollUsd: number = 100
 ): Promise<{
-  estimatedPnlGbp: { low: number; mid: number; high: number };
+  estimatedPnlUsd: { low: number; mid: number; high: number };
   topTraders: LeaderboardEntry[];
   disclaimer: string;
 }> {
@@ -631,7 +629,7 @@ export async function getQuickEstimate(
 
   if (leaderboard.length === 0) {
     return {
-      estimatedPnlGbp: { low: 0, mid: 0, high: 0 },
+      estimatedPnlUsd: { low: 0, mid: 0, high: 0 },
       topTraders: [],
       disclaimer: 'Insufficient data for estimate',
     };
@@ -645,14 +643,14 @@ export async function getQuickEstimate(
   // Apply conservative adjustments for copy trading friction
   const frictionFactor = 0.6; // Assume 40% loss due to delays, slippage, etc.
 
-  const estimatedPnlGbp = {
-    low: bankrollGbp * (minRoi / 100) * frictionFactor * 0.5,
-    mid: bankrollGbp * (avgRoi / 100) * frictionFactor,
-    high: bankrollGbp * (maxRoi / 100) * frictionFactor * 0.8,
+  const estimatedPnlUsd = {
+    low: bankrollUsd * (minRoi / 100) * frictionFactor * 0.5,
+    mid: bankrollUsd * (avgRoi / 100) * frictionFactor,
+    high: bankrollUsd * (maxRoi / 100) * frictionFactor * 0.8,
   };
 
   return {
-    estimatedPnlGbp,
+    estimatedPnlUsd,
     topTraders: leaderboard,
     disclaimer: `Quick estimate based on top trader ROI (${avgRoi.toFixed(1)}% avg) with 40% friction adjustment. Run full simulation for accurate results.`,
   };

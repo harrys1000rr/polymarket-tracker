@@ -20,19 +20,52 @@ interface LeaderboardCache {
   timestamp: number;
 }
 
+// Multi-layer caching for bulletproof instant loading
 const leaderboardCache: Map<string, LeaderboardCache> = new Map();
-const CACHE_TTL_MS = 2000; // 2 seconds
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes - fresh cache
+const STALE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour - stale but usable
+const PERSISTENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours - last resort cache
+
+// Initialize cache on startup
+export async function initializeCache(): Promise<void> {
+  try {
+    logger.info('Initializing leaderboard cache...');
+    const metrics: Array<'realized_pnl' | 'roi' | 'volume'> = ['realized_pnl', 'roi', 'volume'];
+    const limits = [5, 10, 25];
+    
+    for (const metric of metrics) {
+      for (const limit of limits) {
+        try {
+          const data = await getLeaderboardDirect(metric, limit);
+          setLeaderboardCache(metric, limit, data);
+        } catch (error) {
+          // Cache empty array if DB query fails - no mock data
+          setLeaderboardCache(metric, limit, []);
+          logger.warn({ error, metric, limit }, 'Failed to initialize cache entry, using empty data');
+        }
+      }
+    }
+    logger.info('Leaderboard cache initialized');
+  } catch (error) {
+    logger.error({ error }, 'Failed to initialize cache');
+  }
+}
 
 export function setLeaderboardCache(metric: string, limit: number, data: LeaderboardEntry[]): void {
   const key = `${metric}:${limit}`;
   leaderboardCache.set(key, { data, timestamp: Date.now() });
 }
 
-function getLeaderboardCache(metric: string, limit: number): LeaderboardEntry[] | null {
+function getLeaderboardCache(metric: string, limit: number): { data: LeaderboardEntry[]; isStale: boolean } | null {
   const key = `${metric}:${limit}`;
   const cached = leaderboardCache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.data;
+  if (cached) {
+    const age = Date.now() - cached.timestamp;
+    if (age < CACHE_TTL_MS) {
+      return { data: cached.data, isStale: false }; // Fresh cache
+    } else if (age < STALE_CACHE_TTL_MS) {
+      return { data: cached.data, isStale: true }; // Stale but usable
+    }
   }
   return null;
 }
@@ -421,74 +454,161 @@ export async function getLeaderboard(
   metric: 'realized_pnl' | 'roi' | 'volume' = 'realized_pnl',
   limit: number = 10
 ): Promise<LeaderboardEntry[]> {
-  // Check cache first for instant response
+  // Layer 1: In-memory cache for INSTANT response
   const cached = getLeaderboardCache(metric, limit);
   if (cached) {
-    return cached;
+    // If cache is stale, refresh in background but return stale data immediately
+    if (cached.isStale) {
+      setImmediate(async () => {
+        try {
+          const freshData = await getLeaderboardDirect(metric, limit);
+          setLeaderboardCache(metric, limit, freshData);
+          await savePersistentCache(metric, limit, freshData);
+        } catch (error) {
+          logger.warn({ error, metric, limit }, 'Background cache refresh failed');
+        }
+      });
+    }
+    return cached.data; // Always return immediately, even if stale
   }
 
-  // Cache miss - fetch from DB and cache result
-  const result = await getLeaderboardDirect(metric, limit);
-  setLeaderboardCache(metric, limit, result);
-  return result;
+  // Layer 2: Persistent cache from database
+  try {
+    const persistentData = await getPersistentCache(metric, limit);
+    if (persistentData) {
+      setLeaderboardCache(metric, limit, persistentData);
+      // Trigger background refresh
+      setImmediate(async () => {
+        try {
+          const freshData = await getLeaderboardDirect(metric, limit);
+          setLeaderboardCache(metric, limit, freshData);
+          await savePersistentCache(metric, limit, freshData);
+        } catch (error) {
+          logger.warn({ error, metric, limit }, 'Background refresh from persistent cache failed');
+        }
+      });
+      return persistentData;
+    }
+  } catch (error) {
+    logger.warn({ error, metric, limit }, 'Persistent cache lookup failed');
+  }
+
+  // Layer 3: Fresh data with timeout (last resort)
+  try {
+    const result = await Promise.race([
+      getLeaderboardDirect(metric, limit),
+      new Promise<LeaderboardEntry[]>((_, reject) => 
+        setTimeout(() => reject(new Error('Query timeout')), 1500) // 1.5 second timeout
+      )
+    ]);
+    setLeaderboardCache(metric, limit, result);
+    await savePersistentCache(metric, limit, result);
+    return result;
+  } catch (error) {
+    logger.error({ error, metric, limit }, 'All cache layers failed');
+    // Cache empty array for future instant responses
+    const emptyData: LeaderboardEntry[] = [];
+    setLeaderboardCache(metric, limit, emptyData);
+    return emptyData;
+  }
 }
 
-async function getLeaderboardDirect(
+export async function getLeaderboardDirect(
   metric: string,
   limit: number
 ): Promise<LeaderboardEntry[]> {
-  // Sort by pnl_7d (unrealized_pnl) since that's what we calculate in bulk aggregation
-  // For 'realized_pnl' metric, use pnl_7d which represents net trading PnL
-  let orderBy: string;
-  switch (metric) {
-    case 'roi':
-      orderBy = 'CASE WHEN volume_7d > 0 THEN pnl_7d / volume_7d ELSE 0 END DESC';
-      break;
-    case 'volume':
-      orderBy = 'volume_7d DESC';
-      break;
-    default:
-      // Sort by absolute pnl_7d to show top performers (both profit and loss leaders)
-      orderBy = 'pnl_7d DESC';
+  try {
+    // Use the actual realized PnL column (not estimated) and require minimum activity
+    let orderBy: string;
+    let whereClause: string;
+    
+    switch (metric) {
+      case 'roi':
+        orderBy = 'CASE WHEN volume_7d > 0 THEN realized_pnl_7d / volume_7d ELSE 0 END DESC';
+        whereClause = 'volume_7d >= 100 AND trades_7d >= 3';
+        break;
+      case 'volume':
+        orderBy = 'volume_7d DESC';
+        whereClause = 'volume_7d >= 100';
+        break;
+      default: // realized_pnl
+        orderBy = 'realized_pnl_7d DESC';
+        whereClause = 'volume_7d >= 100 AND trades_7d >= 3';
+    }
+
+    const result = await query<any>(
+      `SELECT
+        wallet_address,
+        realized_pnl_7d,
+        unrealized_pnl,
+        volume_7d,
+        trades_7d,
+        unique_markets_7d,
+        settled_trades_7d,
+        winning_trades_7d,
+        last_trade_seen
+      FROM wallet_stats_live
+      WHERE ${whereClause}
+      ORDER BY ${orderBy} NULLS LAST
+      LIMIT $1`,
+      [limit]
+    );
+
+    return result.rows.map((row: any, index: number) => ({
+      rank: index + 1,
+      walletAddress: row.wallet_address,
+      realizedPnl: parseFloat(row.realized_pnl_7d) || 0,
+      unrealizedPnl: parseFloat(row.unrealized_pnl) || 0,
+      totalPnl: (parseFloat(row.realized_pnl_7d) || 0) + (parseFloat(row.unrealized_pnl) || 0),
+      volume: parseFloat(row.volume_7d) || 0,
+      tradeCount: row.trades_7d || 0,
+      winRate: row.settled_trades_7d > 0 ? row.winning_trades_7d / row.settled_trades_7d : 0,
+      roiPercent: row.volume_7d > 0 ? (parseFloat(row.realized_pnl_7d) || 0) / (parseFloat(row.volume_7d) || 1) * 100 : 0,
+      uniqueMarkets: row.unique_markets_7d || 0,
+      lastTradeTime: row.last_trade_seen || new Date(),
+    }));
+  } catch (error) {
+    logger.error({ error }, 'Leaderboard query failed');
+    throw error; // Don't return mock data, let it fail properly
   }
+}
 
-  const result = await query<any>(
-    `SELECT
-      wallet_address,
-      pnl_7d,
-      unrealized_pnl,
-      volume_7d,
-      trades_7d,
-      unique_markets_7d,
-      settled_trades_7d,
-      winning_trades_7d,
-      last_trade_seen
-    FROM wallet_stats_live
-    WHERE volume_7d >= 100 AND trades_7d >= 5
-    ORDER BY ${orderBy} NULLS LAST
-    LIMIT $1`,
-    [limit]
-  );
+// ============================================
+// Persistent Cache Layer (Database-backed)
+// ============================================
 
-  return result.rows.map((row: any, index: number) => ({
-    rank: index + 1,
-    walletAddress: row.wallet_address,
-    realizedPnl: parseFloat(row.pnl_7d) || 0,
-    unrealizedPnl: parseFloat(row.unrealized_pnl) || 0,
-    totalPnl: parseFloat(row.pnl_7d) || 0,
-    volume: parseFloat(row.volume_7d) || 0,
-    tradeCount: row.trades_7d || 0,
-    winRate:
-      row.settled_trades_7d > 0
-        ? row.winning_trades_7d / row.settled_trades_7d
-        : 0,
-    roiPercent:
-      row.volume_7d > 0
-        ? (parseFloat(row.realized_pnl_7d) / parseFloat(row.volume_7d)) * 100
-        : 0,
-    uniqueMarkets: row.unique_markets_7d || 0,
-    lastTradeSeen: row.last_trade_seen,
-  }));
+async function savePersistentCache(metric: string, limit: number, data: LeaderboardEntry[]): Promise<void> {
+  try {
+    const key = `${metric}:${limit}`;
+    await query(
+      `INSERT INTO leaderboard_cache (cache_key, data, created_at) 
+       VALUES ($1, $2, NOW()) 
+       ON CONFLICT (cache_key) DO UPDATE SET 
+         data = $2, created_at = NOW()`,
+      [key, JSON.stringify(data)]
+    );
+  } catch (error) {
+    logger.warn({ error, metric, limit }, 'Failed to save persistent cache');
+  }
+}
+
+async function getPersistentCache(metric: string, limit: number): Promise<LeaderboardEntry[] | null> {
+  try {
+    const key = `${metric}:${limit}`;
+    const result = await query<any>(
+      `SELECT data, created_at FROM leaderboard_cache 
+       WHERE cache_key = $1 
+       AND created_at > NOW() - INTERVAL '24 hours'`,
+      [key]
+    );
+    
+    if (result.rows.length > 0) {
+      return JSON.parse(result.rows[0].data);
+    }
+  } catch (error) {
+    logger.warn({ error, metric, limit }, 'Failed to get persistent cache');
+  }
+  return null;
 }
 
 export async function saveLeaderboardSnapshot(

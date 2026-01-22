@@ -36,6 +36,10 @@ async function main() {
 
   log.info('Running migrations...');
   await runMigrations();
+  
+  // Initialize cache for instant responses
+  log.info('Initializing leaderboard cache...');
+  await dataStore.initializeCache();
 
   // ============================================
   // Express Server
@@ -181,7 +185,7 @@ async function main() {
 
   startAggregator();
 
-  // Broadcast leaderboard and status updates every second
+  // Broadcast leaderboard and status updates frequently for real-time feel
   setInterval(async () => {
     try {
       const leaderboard = await dataStore.getLeaderboard('realized_pnl', 10);
@@ -190,7 +194,7 @@ async function main() {
     } catch (err) {
       // Silently ignore broadcast errors
     }
-  }, config.LEADERBOARD_REFRESH_INTERVAL_MS);
+  }, 1000); // Every 1 second for instant updates
 
   // Cleanup old data daily
   setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
