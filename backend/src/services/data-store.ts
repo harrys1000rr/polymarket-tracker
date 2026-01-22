@@ -531,8 +531,8 @@ export async function getLeaderboardDirect(
         orderBy = 'volume_7d DESC';
         whereClause = 'volume_7d >= 10'; // Much lower threshold
         break;
-      default: // realized_pnl
-        orderBy = 'realized_pnl_7d DESC';
+      default: // realized_pnl (but use total PnL for better results)
+        orderBy = '(realized_pnl_7d + unrealized_pnl) DESC';
         whereClause = 'volume_7d >= 10 AND trades_7d >= 1'; // Show traders with any meaningful activity
     }
 
