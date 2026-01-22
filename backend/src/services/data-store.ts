@@ -518,22 +518,51 @@ export async function getLeaderboardDirect(
   limit: number
 ): Promise<LeaderboardEntry[]> {
   try {
-    // Use the actual realized PnL column (not estimated) and require minimum activity
+    // Use REAL PnL data from Polymarket's official API
+    const { getPolymarketLeaderboard, convertToLeaderboardEntry } = await import('./polymarket-leaderboard.js');
+    
+    let orderBy: 'PNL' | 'VOLUME' = 'PNL';
+    let timePeriod: '7D' | 'DAY' | '30D' | 'ALL' = '7D';
+    
+    switch (metric) {
+      case 'volume':
+        orderBy = 'VOLUME';
+        break;
+      case 'roi':
+      case 'realized_pnl':
+      default:
+        orderBy = 'PNL';
+        break;
+    }
+
+    const polymarketData = await getPolymarketLeaderboard({
+      orderBy,
+      timePeriod,
+      limit: Math.min(limit, 50), // Polymarket API max is 50
+    });
+
+    return polymarketData.map((entry, index) => convertToLeaderboardEntry(entry, index));
+  } catch (error) {
+    logger.error({ error }, 'Polymarket leaderboard fetch failed');
+    
+    // Fallback to our database data (but it's probably wrong)
+    logger.warn('Falling back to database leaderboard data (may be inaccurate)');
+    
     let orderBy: string;
     let whereClause: string;
     
     switch (metric) {
       case 'roi':
         orderBy = 'CASE WHEN volume_7d > 0 THEN realized_pnl_7d / volume_7d ELSE 0 END DESC';
-        whereClause = 'volume_7d >= 10 AND trades_7d >= 1'; // Lower thresholds to find actual traders
+        whereClause = 'volume_7d >= 10 AND trades_7d >= 1';
         break;
       case 'volume':
         orderBy = 'volume_7d DESC';
-        whereClause = 'volume_7d >= 10'; // Much lower threshold
+        whereClause = 'volume_7d >= 10';
         break;
-      default: // realized_pnl (but use total PnL for better results)
-        orderBy = '(realized_pnl_7d + unrealized_pnl) DESC';
-        whereClause = 'volume_7d >= 10 AND trades_7d >= 1'; // Show traders with any meaningful activity
+      default:
+        orderBy = 'realized_pnl_7d DESC';
+        whereClause = 'volume_7d >= 10 AND trades_7d >= 1';
     }
 
     const result = await query<any>(
@@ -567,9 +596,6 @@ export async function getLeaderboardDirect(
       uniqueMarkets: row.unique_markets_7d || 0,
       lastTradeTime: row.last_trade_seen || new Date(),
     }));
-  } catch (error) {
-    logger.error({ error }, 'Leaderboard query failed');
-    throw error; // Don't return mock data, let it fail properly
   }
 }
 
