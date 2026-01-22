@@ -522,7 +522,7 @@ export async function getLeaderboardDirect(
     const { getPolymarketLeaderboard, convertToLeaderboardEntry } = await import('./polymarket-leaderboard.js');
     
     let orderBy: 'PNL' | 'VOLUME' = 'PNL';
-    let timePeriod: '7D' | 'DAY' | '30D' | 'ALL' = '7D';
+    let timePeriod: 'WEEK' | 'DAY' | 'MONTH' | 'ALL' = 'WEEK';
     
     switch (metric) {
       case 'volume':

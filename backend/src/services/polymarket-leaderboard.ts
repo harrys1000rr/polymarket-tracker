@@ -15,7 +15,7 @@ export interface PolymarketLeaderboardEntry {
 
 export interface LeaderboardParams {
   category?: 'OVERALL' | string;
-  timePeriod?: 'DAY' | '7D' | '30D' | 'ALL';
+  timePeriod?: 'DAY' | 'WEEK' | 'MONTH' | 'ALL';
   orderBy?: 'PNL' | 'VOLUME';
   limit?: number;
   offset?: number;
@@ -31,7 +31,7 @@ export async function getPolymarketLeaderboard(
 ): Promise<PolymarketLeaderboardEntry[]> {
   const {
     category = 'OVERALL',
-    timePeriod = '7D',
+    timePeriod = 'WEEK',
     orderBy = 'PNL',
     limit = 25,
     offset = 0,
