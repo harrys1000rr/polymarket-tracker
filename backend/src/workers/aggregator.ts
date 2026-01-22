@@ -4,6 +4,7 @@ import { query, refreshLeaderboardView } from '../models/database.js';
 import * as dataStore from '../services/data-store.js';
 import { polymarketApi } from '../services/polymarket-api.js';
 import { Trade, WalletStats } from '../models/types.js';
+import { updateWalletStatsWithRealPnL } from '../services/pnl-calculator.js';
 
 const logger = createChildLogger('aggregator');
 
@@ -77,8 +78,12 @@ export async function runFullAggregation(): Promise<void> {
   logger.info('Starting full aggregation');
 
   try {
-    // Use bulk SQL aggregation for speed
+    // Use bulk SQL aggregation for speed (basic stats)
     await runBulkAggregation();
+
+    // Calculate real PnL using position tracking
+    logger.info('Calculating real PnL for all wallets');
+    await updateWalletStatsWithRealPnL();
 
     // Refresh materialized view
     try {
@@ -115,12 +120,12 @@ async function runBulkAggregation(): Promise<void> {
   const cutoff24h = nowSec - 24 * 60 * 60;
   const cutoff7d = nowSec - 7 * 24 * 60 * 60;
 
-  // Single SQL query to aggregate all wallet stats at once
-  // PnL is estimated as: (sells - buys) * avg_price for a rough approximation
+  // Single SQL query to aggregate basic wallet stats (volume, trades, etc.)
+  // Real PnL will be calculated separately using position tracking
   const aggregationQuery = `
     INSERT INTO wallet_stats_live (
       wallet_address, volume_1h, trades_1h, volume_24h, trades_24h,
-      volume_7d, trades_7d, unique_markets_7d, unrealized_pnl, pnl_7d, realized_pnl_7d,
+      volume_7d, trades_7d, unique_markets_7d, 
       last_trade_seen, last_updated
     )
     SELECT
@@ -132,32 +137,12 @@ async function runBulkAggregation(): Promise<void> {
       COALESCE(SUM(COALESCE(usdc_size, size * price)), 0) as volume_7d,
       COUNT(*)::int as trades_7d,
       COUNT(DISTINCT condition_id)::int as unique_markets_7d,
-      -- Proper PnL calculation: (sell_value - buy_cost) for realized positions
-      -- This is a simplified estimation - for accurate PnL we need position tracking
-      0 as unrealized_pnl, -- Set to 0 for now, requires position tracking
-      
-      -- Realized PnL estimation: net cash flow (negative = spent money, positive = received money)  
-      COALESCE(SUM(
-        CASE
-          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price) -- Money received
-          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price) -- Money spent
-          ELSE 0
-        END
-      ), 0) as pnl_7d,
-      -- Same calculation for realized_pnl_7d for now (until we implement proper position tracking)
-      COALESCE(SUM(
-        CASE
-          WHEN side = 'SELL' THEN COALESCE(usdc_size, size * price) -- Money received
-          WHEN side = 'BUY' THEN -COALESCE(usdc_size, size * price) -- Money spent
-          ELSE 0
-        END
-      ), 0) as realized_pnl_7d,
       to_timestamp(MAX(timestamp)) as last_trade_seen,
       NOW() as last_updated
     FROM trades_raw
     WHERE timestamp >= $3
     GROUP BY wallet_address
-    HAVING COUNT(*) >= 5 AND SUM(COALESCE(usdc_size, size * price)) >= 100
+    HAVING COUNT(*) >= 1 AND SUM(COALESCE(usdc_size, size * price)) >= 10
     ON CONFLICT (wallet_address) DO UPDATE SET
       volume_1h = EXCLUDED.volume_1h,
       trades_1h = EXCLUDED.trades_1h,
@@ -166,9 +151,6 @@ async function runBulkAggregation(): Promise<void> {
       volume_7d = EXCLUDED.volume_7d,
       trades_7d = EXCLUDED.trades_7d,
       unique_markets_7d = EXCLUDED.unique_markets_7d,
-      unrealized_pnl = EXCLUDED.unrealized_pnl,
-      pnl_7d = EXCLUDED.pnl_7d,
-      realized_pnl_7d = EXCLUDED.realized_pnl_7d,
       last_trade_seen = EXCLUDED.last_trade_seen,
       last_updated = NOW()
   `;

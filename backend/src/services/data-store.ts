@@ -525,15 +525,15 @@ export async function getLeaderboardDirect(
     switch (metric) {
       case 'roi':
         orderBy = 'CASE WHEN volume_7d > 0 THEN realized_pnl_7d / volume_7d ELSE 0 END DESC';
-        whereClause = 'volume_7d >= 100 AND trades_7d >= 3';
+        whereClause = 'volume_7d >= 10 AND trades_7d >= 1'; // Lower thresholds to find actual traders
         break;
       case 'volume':
         orderBy = 'volume_7d DESC';
-        whereClause = 'volume_7d >= 100';
+        whereClause = 'volume_7d >= 10'; // Much lower threshold
         break;
       default: // realized_pnl
         orderBy = 'realized_pnl_7d DESC';
-        whereClause = 'volume_7d >= 100 AND trades_7d >= 3';
+        whereClause = 'volume_7d >= 10 AND trades_7d >= 1'; // Show traders with any meaningful activity
     }
 
     const result = await query<any>(
