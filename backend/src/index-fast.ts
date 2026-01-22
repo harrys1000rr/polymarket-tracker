@@ -145,6 +145,48 @@ async function main() {
     }
   });
 
+  // NEW endpoint for testing real data - bypasses everything
+  app.get('/api/polymarket-real', async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      
+      console.log('Fetching real data from Polymarket API...');
+      const response = await fetch(`https://data-api.polymarket.com/v1/leaderboard?orderBy=PNL&timePeriod=WEEK&limit=${limit}`, {
+        headers: {
+          'User-Agent': 'PolymarketTracker/2.0'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Polymarket API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Got Polymarket data:', data.length, 'traders');
+      
+      res.json({
+        timestamp: new Date().toISOString(),
+        source: 'polymarket_api_live',
+        count: data.length,
+        realData: data.map((entry: any, index: number) => ({
+          rank: index + 1,
+          walletAddress: entry.proxyWallet,
+          displayName: entry.userName,
+          realizedPnl: entry.pnl,
+          totalPnl: entry.pnl,
+          volume: entry.vol,
+          verifiedBadge: entry.verifiedBadge,
+        }))
+      });
+    } catch (error) {
+      console.error('Error fetching real data:', error);
+      res.status(503).json({ 
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Root endpoint
   app.get('/', (req, res) => {
     res.json({
