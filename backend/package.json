@@ -4,8 +4,8 @@
   "description": "Real-time Polymarket trader monitoring and copy performance simulator",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "dev": "tsx watch src/index-fast.ts",
+    "build": "tsc && cp dist/index-fast.js dist/index.js",
     "start": "node dist/index.js",
     "migrate": "tsx src/migrations/run.ts",
     "typecheck": "tsc --noEmit"
