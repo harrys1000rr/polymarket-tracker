@@ -23,7 +23,7 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
   const sorted = [...leaderboard].sort((a, b) => {
     switch (sortBy) {
       case 'pnl':
-        return (b.realizedPnl || 0) - (a.realizedPnl || 0);
+        return (b.totalPnl || 0) - (a.totalPnl || 0);
       case 'volume':
         return (b.volume || 0) - (a.volume || 0);
       case 'trades':
@@ -76,7 +76,7 @@ export default function LeaderboardTable({ leaderboard, onSelectWallet, selected
           </thead>
           <tbody className="divide-y divide-white/5">
             {sorted.map((entry, index) => {
-              const pnl = entry.realizedPnl || 0;
+              const pnl = entry.totalPnl || 0;
               const isPositive = pnl >= 0;
 
               return (
