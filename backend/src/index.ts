@@ -37,11 +37,9 @@ async function main() {
   log.info('Running migrations...');
   await runMigrations();
   
-  // Initialize cache in background for instant responses
-  log.info('Initializing leaderboard cache in background...');
-  dataStore.initializeCache().catch((err) => {
-    log.warn({ err }, 'Cache initialization failed, will use empty cache');
-  });
+  // Initialize cache for instant responses
+  log.info('Initializing leaderboard cache...');
+  await dataStore.initializeCache();
 
   // ============================================
   // Express Server
@@ -159,8 +157,8 @@ async function main() {
     log.error({ err }, 'WebSocket stream error');
   });
 
-  // Connect to streams in background - don't block startup
-  wsStream.connect().catch((err) => {
+  // Connect to streams
+  await wsStream.connect().catch((err) => {
     log.warn({ err }, 'WebSocket connection failed, will retry');
   });
 
@@ -168,21 +166,17 @@ async function main() {
   // Data Backfill
   // ============================================
 
-  // Start backfill in background without blocking server startup
+  // Check if we need to backfill
   const lastTradeTimestamp = await dataStore.getSystemState('last_trade_timestamp');
   const needsBackfill = !lastTradeTimestamp || Date.now() - lastTradeTimestamp > 60 * 60 * 1000;
 
   if (needsBackfill) {
-    log.info('Starting data backfill in background...');
-    // Don't await - let it run in background
+    log.info('Starting data backfill...');
     backfillTrades(config.TRADE_BACKFILL_DAYS).then(() => {
-      log.info('Backfill completed');
       dataStore.setSystemState('last_trade_timestamp', Date.now());
     }).catch((err) => {
       log.error({ err }, 'Backfill failed');
     });
-  } else {
-    log.info('No backfill needed, data is recent');
   }
 
   // ============================================
@@ -191,7 +185,7 @@ async function main() {
 
   startAggregator();
 
-  // Broadcast leaderboard and status updates for real-time feel
+  // Broadcast leaderboard and status updates frequently for real-time feel
   setInterval(async () => {
     try {
       const leaderboard = await dataStore.getLeaderboard('realized_pnl', 10);
@@ -200,7 +194,7 @@ async function main() {
     } catch (err) {
       // Silently ignore broadcast errors
     }
-  }, 5000); // Every 5 seconds to reduce load
+  }, 1000); // Every 1 second for instant updates
 
   // Cleanup old data daily
   setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
