@@ -93,53 +93,54 @@ async function main() {
     }
   });
 
-  // Leaderboard endpoint - Real data only
+  // Leaderboard endpoint - ALWAYS use real Polymarket data
   app.get('/api/leaderboard', async (req, res) => {
     try {
       const metric = (req.query.metric as string) || 'realized_pnl';
       const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
-      const forceRefresh = req.query.force_refresh === 'true';
       
-      if (forceRefresh) {
-        // Bypass all caches and use Polymarket API directly
-        const { getPolymarketLeaderboard, convertToLeaderboardEntry } = await import('./services/polymarket-leaderboard.js');
-        
-        const orderBy = metric === 'volume' ? 'VOLUME' : 'PNL';
-        const polymarketData = await getPolymarketLeaderboard({
-          orderBy,
-          timePeriod: 'WEEK',
-          limit: Math.min(limit, 50),
-        });
-
-        const leaderboard = polymarketData.map((entry, index) => convertToLeaderboardEntry(entry, index));
-        
-        res.json({
-          timestamp: new Date().toISOString(),
-          window: 'WEEK',
-          metric: metric,
-          leaderboard: leaderboard,
-          lastUpdated: new Date().toISOString(),
-          source: 'polymarket_api_direct',
-        });
-      } else {
-        // Use normal cached data store
-        const dataStore = await import('./services/data-store.js');
-        const leaderboard = await dataStore.getLeaderboard(metric as any, limit);
-        
-        res.json({
-          timestamp: new Date().toISOString(),
-          window: '7d',
-          metric: metric,
-          leaderboard: leaderboard,
-          lastUpdated: new Date().toISOString(),
-          source: 'cached_data',
-        });
+      // ALWAYS use Polymarket API directly - no more fake data
+      const orderBy = metric === 'volume' ? 'VOLUME' : 'PNL';
+      
+      const response = await fetch(`https://data-api.polymarket.com/v1/leaderboard?orderBy=${orderBy}&timePeriod=WEEK&limit=${Math.min(limit, 50)}`);
+      
+      if (!response.ok) {
+        throw new Error(`Polymarket API error: ${response.status}`);
       }
+      
+      const polymarketData = await response.json();
+      
+      const leaderboard = polymarketData.map((entry: any, index: number) => ({
+        rank: index + 1,
+        walletAddress: entry.proxyWallet,
+        displayName: entry.userName,
+        realizedPnl: entry.pnl,
+        unrealizedPnl: 0,
+        totalPnl: entry.pnl,
+        volume: entry.vol,
+        tradeCount: 0,
+        winRate: 0,
+        roiPercent: entry.vol > 0 ? (entry.pnl / entry.vol) * 100 : 0,
+        uniqueMarkets: 0,
+        lastTradeTime: new Date(),
+        verifiedBadge: entry.verifiedBadge,
+        profileImage: entry.profileImage,
+        xUsername: entry.xUsername,
+      }));
+      
+      res.json({
+        timestamp: new Date().toISOString(),
+        window: 'WEEK',
+        metric: metric,
+        leaderboard: leaderboard,
+        lastUpdated: new Date().toISOString(),
+        source: 'polymarket_api_real_data',
+      });
     } catch (error) {
-      // If real data fails, return error - NO FAKE DATA
+      console.error('Polymarket API error:', error);
       res.status(503).json({ 
-        error: 'Real leaderboard data temporarily unavailable',
-        message: 'No fake data - please try again shortly'
+        error: 'Polymarket API temporarily unavailable',
+        message: 'Real data source temporarily down'
       });
     }
   });
